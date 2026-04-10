@@ -1,4 +1,4 @@
-# 🎒 Portail de Gestion des Objets Perdus et Trouvés — Campus
+# Portail de Gestion des Objets Perdus et Trouvés — Campus
 
 Ce projet constitue une application web complète (*full-stack*) destinée à la gestion centralisée des objets perdus et trouvés au sein d'un campus universitaire. Il permet aux membres de la communauté académique de déclarer des objets égarés ou découverts, d'effectuer des recherches ciblées et d'engager une procédure de réclamation, le tout au travers d'une interface sécurisée et conforme aux exigences réglementaires en vigueur (RGPD, WCAG).
 
@@ -74,16 +74,21 @@ Le détail complet du schéma est disponible dans `server/prisma/schema.prisma`.
 
 ## Fonctionnalités (Périmètre MVP)
 
-- ✅ Authentification institutionnelle (JWT, messagerie campus)
-- ✅ Déclaration d'objets perdus et trouvés (opérations CRUD complètes)
-- ✅ Téléversement de photographies par annonce
-- ✅ Recherche et filtrage avancés (mots-clés, catégorie, lieu, date, statut)
-- ✅ Messagerie interne sécurisée entre utilisateurs
-- ✅ Interface de modération administrative
-- ✅ Processus de demande de réclamation
-- 🔜 Suggestion automatique de correspondances (IA / apprentissage automatique)
-- 🔜 Système de notifications en temps réel
+**Implémentées**
+
+- Authentification institutionnelle (JWT, messagerie campus)
+- Déclaration d'objets perdus et trouvés (opérations CRUD complètes)
+- Téléversement de photographies par annonce
+- Recherche et filtrage avancés (mots-clés, catégorie, lieu, date, statut)
+- Messagerie interne sécurisée entre utilisateurs
+- Interface de modération administrative
+- Processus de demande de réclamation
+
+**Prévues (versions ultérieures)**
+
+- Suggestion automatique de correspondances (intelligence artificielle / apprentissage automatique)
+- Système de notifications en temps réel
 
 ---
 
-> Développé pour le campus de l'ISEP — Conforme au RGPD et aux standards d'accessibilité WCAG.
+> Développé pour le campus de l'ISEP. Conforme au RGPD et aux standards d'accessibilité WCAG.
