@@ -12,6 +12,47 @@ exports.listPendingItems = catchAsync(async (_req, res) => {
   res.json({ items });
 });
 
+/**
+ * PATCH /api/admin/items/:id/moderate
+ * Body: { status: 'VERIFIED' | 'REJECTED', moderationNote?: string }
+ * - Changes item status
+ * - Records the moderator
+ * - Sends an in-app notification to the author
+ */
+exports.moderateItem = catchAsync(async (req, res) => {
+  const { status, moderationNote } = req.body;
+
+  if (!['VERIFIED', 'REJECTED'].includes(status)) {
+    return res.status(422).json({ error: 'status must be VERIFIED or REJECTED' });
+  }
+
+  const item = await prisma.item.update({
+    where:   { id: req.params.id },
+    data:    { status, moderatorId: req.user.id, moderationNote: moderationNote ?? null },
+    include: {
+      reporter: { select: { id: true, username: true, email: true } },
+      category: true,
+      location: true,
+    },
+  });
+
+  // In-app notification to the item author
+  await prisma.notification.create({
+    data: {
+      userId:  item.reporterId,
+      type:    status === 'VERIFIED' ? 'ITEM_VERIFIED' : 'ITEM_REJECTED',
+      message: status === 'VERIFIED'
+        ? `Your item "${item.name}" has been approved and is now publicly visible.`
+        : `Your item "${item.name}" was rejected.${
+            moderationNote ? ` Reason: ${moderationNote}` : ''
+          }`,
+      itemId:  item.id,
+    },
+  });
+
+  res.json({ item });
+});
+
 exports.verifyItem = catchAsync(async (req, res) => {
   const { moderationNote } = req.body;
   const item = await prisma.item.update({
