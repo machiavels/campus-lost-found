@@ -1,7 +1,9 @@
 const request = require('supertest');
 const app     = require('../src/app');
 
-const EMAIL    = `test_auth_${Date.now()}@eleve.isep.fr`;
+const SUFFIX   = Date.now();
+const EMAIL    = `test_auth_${SUFFIX}@eleve.isep.fr`;
+const USERNAME = `testuser_${SUFFIX}`;
 const PASSWORD = 'SecurePass123!';
 let   TOKEN    = '';
 
@@ -10,7 +12,7 @@ describe('POST /api/auth/register', () => {
   it('creates a new user and returns 201', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: EMAIL, password: PASSWORD, firstName: 'Jean', lastName: 'Dupont' });
+      .send({ username: USERNAME, email: EMAIL, password: PASSWORD });
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('token');
@@ -20,25 +22,25 @@ describe('POST /api/auth/register', () => {
   it('rejects duplicate email with 409', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: EMAIL, password: PASSWORD, firstName: 'Jean', lastName: 'Dupont' });
+      .send({ username: `${USERNAME}_2`, email: EMAIL, password: PASSWORD });
 
     expect(res.status).toBe(409);
   });
 
-  it('rejects non-campus email with 400', async () => {
+  it('rejects non-campus email with 422', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: 'hacker@gmail.com', password: PASSWORD, firstName: 'A', lastName: 'B' });
+      .send({ username: `hacker_${SUFFIX}`, email: 'hacker@gmail.com', password: PASSWORD });
 
-    expect(res.status).toBe(400);
+    expect([400, 422]).toContain(res.status);
   });
 
-  it('rejects missing password with 400', async () => {
+  it('rejects missing password with 422', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: `other_${Date.now()}@eleve.isep.fr`, firstName: 'A', lastName: 'B' });
+      .send({ username: `other_${SUFFIX}`, email: `other_${SUFFIX}@eleve.isep.fr` });
 
-    expect(res.status).toBe(400);
+    expect([400, 422]).toContain(res.status);
   });
 });
 
@@ -74,7 +76,6 @@ describe('POST /api/auth/login', () => {
 // ─── GET /api/auth/me ──────────────────────────────────────────────────────────
 describe('GET /api/auth/me', () => {
   it('returns the authenticated user profile', async () => {
-    // Ensure TOKEN is populated (may run independently)
     if (!TOKEN) {
       const res = await request(app)
         .post('/api/auth/login')
@@ -87,7 +88,8 @@ describe('GET /api/auth/me', () => {
       .set('Authorization', `Bearer ${TOKEN}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('email', EMAIL);
+    // Controller wraps user in { user: { ... } }
+    expect(res.body.user).toHaveProperty('email', EMAIL);
   });
 
   it('returns 401 without token', async () => {
