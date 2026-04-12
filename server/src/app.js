@@ -11,6 +11,7 @@ const itemRoutes    = require('./routes/item.routes');
 const messageRoutes = require('./routes/message.routes');
 const claimRoutes   = require('./routes/claim.routes');
 const adminRoutes   = require('./routes/admin.routes');
+const searchRoutes  = require('./routes/search.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api/items',    itemRoutes);
 app.use('/api/messages', messageRoutes);
 app.use('/api/claims',   claimRoutes);
 app.use('/api/admin',    adminRoutes);
+app.use('/api/search',   searchRoutes);  // GET /api/search — issue #5
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
