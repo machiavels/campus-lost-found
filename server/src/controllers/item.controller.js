@@ -12,20 +12,32 @@ const ITEM_INCLUDE = {
 /**
  * GET /api/items
  * Query params: keyword, type (LOST|FOUND), status, categoryId, locationId, from, to, page, limit
+ *
+ * Visibility rules:
+ *   - ADMIN           → any status (filtered by ?status= param)
+ *   - Authenticated   → VERIFIED items + their own items (any status)
+ *   - Public/anon     → VERIFIED only
  */
 exports.listItems = catchAsync(async (req, res) => {
   const {
-    keyword, type, status = 'VERIFIED', categoryId, locationId,
+    keyword, type, status, categoryId, locationId,
     from, to, page = 1, limit = 20,
   } = req.query;
 
   const where = {};
 
-  // Non-admins can only see VERIFIED items
-  if (req.user?.role !== 'ADMIN') {
+  if (req.user?.role === 'ADMIN') {
+    // Admins can filter by any status; default shows all
+    if (status) where.status = status;
+  } else if (req.user) {
+    // Authenticated non-admin: VERIFIED items + their own items of any status
+    where.OR = [
+      { status: 'VERIFIED' },
+      { reporterId: req.user.id },
+    ];
+  } else {
+    // Unauthenticated public: VERIFIED only
     where.status = 'VERIFIED';
-  } else if (status) {
-    where.status = status;
   }
 
   if (type)       where.reportType = type;
@@ -34,6 +46,7 @@ exports.listItems = catchAsync(async (req, res) => {
 
   if (keyword) {
     where.OR = [
+      ...(where.OR ?? []),
       { name:        { contains: keyword, mode: 'insensitive' } },
       { description: { contains: keyword, mode: 'insensitive' } },
     ];
@@ -60,13 +73,27 @@ exports.listItems = catchAsync(async (req, res) => {
 
 /**
  * GET /api/items/:id
+ *
+ * Visibility rules (same as listItems):
+ *   - ADMIN           → always visible
+ *   - Author          → always visible (own item)
+ *   - Everyone else   → VERIFIED only
  */
 exports.getItem = catchAsync(async (req, res) => {
   const item = await prisma.item.findUnique({
     where:   { id: req.params.id },
     include: ITEM_INCLUDE,
   });
+
   if (!item) return res.status(404).json({ error: 'Item not found' });
+
+  const isAdmin  = req.user?.role === 'ADMIN';
+  const isAuthor = req.user?.id   === item.reporterId;
+
+  if (item.status !== 'VERIFIED' && !isAdmin && !isAuthor) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
   res.json({ item });
 });
 

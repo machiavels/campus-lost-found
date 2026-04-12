@@ -41,6 +41,11 @@ enum ClaimStatus {
   REJECTED
 }
 
+enum NotificationType {
+  ITEM_VERIFIED
+  ITEM_REJECTED
+}
+
 // ─── User ─────────────────────────────────────────────────────────────────────
 
 model User {
@@ -60,6 +65,7 @@ model User {
   sentMessages      Message[]       @relation("sender")
   receivedMessages  Message[]       @relation("recipient")
   claimRequests     ClaimRequest[]
+  notifications     Notification[]
 
   @@map("users")
 }
@@ -121,6 +127,7 @@ model Item {
   photos           Photo[]
   messages         Message[]
   claimRequests    ClaimRequest[]
+  notifications    Notification[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -175,4 +182,21 @@ model ClaimRequest {
   requester      User        @relation(fields: [requesterId], references: [id])
 
   @@map("claim_requests")
+}
+
+// ─── Notification ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  message   String
+  itemId    String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      Item?            @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
 }
