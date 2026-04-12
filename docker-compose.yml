@@ -24,19 +24,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    env_file:
-      - ./server/.env
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/campus_lost_found
       TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/campus_lost_found_test
+      JWT_SECRET: super_secret_dev_key_change_in_prod
       NODE_ENV: development
       PORT: 3000
     ports:
       - "3000:3000"
-    volumes:
-      - ./server:/app
-      - /app/node_modules
-    command: npm run dev
+    # Pas de volume node_modules — on utilise celui build dans l'image
 
 volumes:
   pgdata:
