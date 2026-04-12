@@ -5,15 +5,19 @@ const { authenticate, requireRole } = require('../middleware/auth.middleware');
 router.use(authenticate);
 
 // POST /api/claims              — submit a claim request
-router.post('/',           ctrl.submitClaim);
+router.post('/',                 ctrl.submitClaim);
 
-// GET  /api/claims/my           — user's own claims
-router.get('/my',          ctrl.myClaims);
+// GET  /api/claims              — admin sees all, user sees own
+router.get('/',                  ctrl.listClaims);
 
-// PATCH /api/claims/:id/approve — admin only
-router.patch('/:id/approve', requireRole('ADMIN'), ctrl.approveClaim);
+// GET  /api/claims/my           — user's own claims (alias)
+router.get('/my',                ctrl.myClaims);
 
-// PATCH /api/claims/:id/reject  — admin only
-router.patch('/:id/reject',  requireRole('ADMIN'), ctrl.rejectClaim);
+// PATCH /api/claims/:id/review  — admin approve or reject { action: 'APPROVED'|'REJECTED' }
+router.patch('/:id/review',      requireRole('ADMIN'), ctrl.reviewClaim);
+
+// Legacy individual approve/reject routes — kept for compatibility
+router.patch('/:id/approve',     requireRole('ADMIN'), ctrl.approveClaim);
+router.patch('/:id/reject',      requireRole('ADMIN'), ctrl.rejectClaim);
 
 module.exports = router;
