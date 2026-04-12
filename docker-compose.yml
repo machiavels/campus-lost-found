@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: campus_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: campus_lost_found
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+    container_name: campus_server
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./server/.env
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/campus_lost_found
+      TEST_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/campus_lost_found_test
+      NODE_ENV: development
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  pgdata:
