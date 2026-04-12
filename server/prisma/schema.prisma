@@ -42,11 +42,16 @@ enum ClaimStatus {
 }
 
 enum NotificationType {
-  ITEM_VERIFIED
-  ITEM_REJECTED
-  NEW_MESSAGE
-  CLAIM_APPROVED
-  CLAIM_REJECTED
+  // Moderation
+  ITEM_VERIFIED    // reporter notified: item approved
+  ITEM_REJECTED    // reporter notified: item rejected
+  // Messaging
+  NEW_MESSAGE      // recipient notified: new message received
+  // Claims
+  NEW_CLAIM        // item reporter notified: someone submitted a claim
+  CLAIM_APPROVED   // claimant notified: claim approved
+  CLAIM_REJECTED   // claimant notified: claim rejected
+  ITEM_CLAIMED     // item reporter notified: item marked as claimed/returned
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────

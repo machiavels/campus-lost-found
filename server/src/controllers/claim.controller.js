@@ -15,10 +15,28 @@ exports.submitClaim = catchAsync(async (req, res) => {
   });
   if (existing) return res.status(409).json({ error: 'You already have a pending claim for this item' });
 
+  // Fetch item with reporter info to send notification
+  const item = await prisma.item.findUnique({
+    where:  { id: itemId },
+    select: { id: true, name: true, reporterId: true },
+  });
+  if (!item) return res.status(404).json({ error: 'Item not found' });
+
   const claim = await prisma.claimRequest.create({
-    data: { itemId, requesterId: req.user.id, requestMessage },
+    data:    { itemId, requesterId: req.user.id, requestMessage },
     include: { item: { select: { id: true, name: true } } },
   });
+
+  // Notify the item reporter that someone submitted a claim
+  if (item.reporterId !== req.user.id) {
+    await notify({
+      userId:  item.reporterId,
+      type:    'NEW_CLAIM',
+      message: `${req.user.username} submitted a claim for your item "${item.name}".`,
+      itemId:  item.id,
+    });
+  }
+
   res.status(201).json({ claim });
 });
 
@@ -45,7 +63,10 @@ exports.rejectClaim = catchAsync(async (req, res) => {
 async function _setClaimStatus(id, status, res) {
   const claim = await prisma.claimRequest.findUnique({
     where:   { id },
-    include: { item: { select: { id: true, name: true } } },
+    include: {
+      item:      { select: { id: true, name: true, reporterId: true } },
+      requester: { select: { id: true, username: true } },
+    },
   });
   if (!claim) return res.status(404).json({ error: 'Claim not found' });
 
@@ -61,9 +82,19 @@ async function _setClaimStatus(id, status, res) {
       where: { id: claim.itemId },
       data:  { status: 'CLAIMED', claimedById: claim.requesterId, claimedAt: new Date() },
     });
+
+    // Notify the item reporter that their item has been claimed
+    if (claim.item.reporterId !== claim.requesterId) {
+      await notify({
+        userId:  claim.item.reporterId,
+        type:    'ITEM_CLAIMED',
+        message: `Your item "${claim.item.name}" has been claimed by ${claim.requester.username} and is marked as returned.`,
+        itemId:  claim.itemId,
+      });
+    }
   }
 
-  // Notify the requester of the decision
+  // Notify the claimant of the decision
   await notify({
     userId:  claim.requesterId,
     type:    status === 'APPROVED' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED',
