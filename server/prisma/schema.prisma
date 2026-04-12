@@ -44,6 +44,9 @@ enum ClaimStatus {
 enum NotificationType {
   ITEM_VERIFIED
   ITEM_REJECTED
+  NEW_MESSAGE
+  CLAIM_APPROVED
+  CLAIM_REJECTED
 }
 
 // ─── User ─────────────────────────────────────────────────────────────────────

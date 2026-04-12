@@ -1,5 +1,6 @@
-const prisma = require('../config/prisma');
+const prisma  = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
+const notify  = require('../services/notify');
 
 // Safe select — never exposes email or phone
 const MSG_SELECT = {
@@ -103,17 +104,26 @@ exports.sendMessage = catchAsync(async (req, res) => {
   }
 
   // Verify item exists
-  const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true } });
+  const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
   if (!item) return res.status(404).json({ error: 'Item not found' });
 
   // Verify recipient exists
-  const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: { id: true } });
+  const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: { id: true, username: true } });
   if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
 
   const msg = await prisma.message.create({
     data:   { senderId: req.user.id, recipientId, itemId, content },
     select: MSG_SELECT,
   });
+
+  // Notify the recipient of the new message
+  await notify({
+    userId:  recipientId,
+    type:    'NEW_MESSAGE',
+    message: `${req.user.username} sent you a message about "${item.name}".`,
+    itemId:  item.id,
+  });
+
   res.status(201).json({ message: msg });
 });
 

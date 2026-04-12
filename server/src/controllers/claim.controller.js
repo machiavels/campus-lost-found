@@ -1,5 +1,6 @@
-const prisma = require('../config/prisma');
+const prisma  = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
+const notify  = require('../services/notify');
 
 /** POST /api/claims */
 exports.submitClaim = catchAsync(async (req, res) => {
@@ -42,12 +43,15 @@ exports.rejectClaim = catchAsync(async (req, res) => {
 });
 
 async function _setClaimStatus(id, status, res) {
-  const claim = await prisma.claimRequest.findUnique({ where: { id } });
+  const claim = await prisma.claimRequest.findUnique({
+    where:   { id },
+    include: { item: { select: { id: true, name: true } } },
+  });
   if (!claim) return res.status(404).json({ error: 'Claim not found' });
 
   const updated = await prisma.claimRequest.update({
-    where: { id },
-    data:  { status },
+    where:   { id },
+    data:    { status },
     include: { item: { select: { id: true, name: true } } },
   });
 
@@ -58,6 +62,16 @@ async function _setClaimStatus(id, status, res) {
       data:  { status: 'CLAIMED', claimedById: claim.requesterId, claimedAt: new Date() },
     });
   }
+
+  // Notify the requester of the decision
+  await notify({
+    userId:  claim.requesterId,
+    type:    status === 'APPROVED' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED',
+    message: status === 'APPROVED'
+      ? `Your claim for "${claim.item.name}" has been approved. You can now pick it up.`
+      : `Your claim for "${claim.item.name}" has been rejected.`,
+    itemId:  claim.itemId,
+  });
 
   res.json({ claim: updated });
 }
