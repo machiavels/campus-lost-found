@@ -15,9 +15,6 @@ exports.listPendingItems = catchAsync(async (_req, res) => {
 /**
  * PATCH /api/admin/items/:id/moderate
  * Body: { status: 'VERIFIED' | 'REJECTED', moderationNote?: string }
- * - Changes item status
- * - Records the moderator
- * - Sends an in-app notification to the author
  */
 exports.moderateItem = catchAsync(async (req, res) => {
   const { status, moderationNote } = req.body;
@@ -36,7 +33,6 @@ exports.moderateItem = catchAsync(async (req, res) => {
     },
   });
 
-  // In-app notification to the item author
   await prisma.notification.create({
     data: {
       userId:  item.reporterId,
@@ -109,54 +105,104 @@ exports.changeUserRole = catchAsync(async (req, res) => {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
+/**
+ * GET /api/categories          — public (via reference.routes.js)
+ * GET /api/admin/categories    — admin alias
+ */
 exports.listCategories = catchAsync(async (_req, res) => {
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
   res.json({ categories });
 });
 
+/**
+ * POST /api/admin/categories
+ * Body: { name: string, description?: string }
+ */
 exports.createCategory = catchAsync(async (req, res) => {
   const { name, description } = req.body;
-  const cat = await prisma.category.create({ data: { name, description } });
+  if (!name || !name.trim()) {
+    return res.status(422).json({ error: 'name is required' });
+  }
+  const cat = await prisma.category.create({ data: { name: name.trim(), description } });
   res.status(201).json({ category: cat });
 });
 
+/**
+ * PUT /api/admin/categories/:id
+ * Body: { name?: string, description?: string }
+ */
 exports.updateCategory = catchAsync(async (req, res) => {
   const { name, description } = req.body;
+  if (name !== undefined && !name.trim()) {
+    return res.status(422).json({ error: 'name cannot be empty' });
+  }
+  const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Category not found' });
   const cat = await prisma.category.update({
     where: { id: req.params.id },
-    data:  { name, description },
+    data:  { name: name ? name.trim() : undefined, description },
   });
   res.json({ category: cat });
 });
 
+/**
+ * DELETE /api/admin/categories/:id
+ */
 exports.deleteCategory = catchAsync(async (req, res) => {
+  const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Category not found' });
   await prisma.category.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
 
 // ── Locations ─────────────────────────────────────────────────────────────────
 
+/**
+ * GET /api/locations           — public (via reference.routes.js)
+ * GET /api/admin/locations     — admin alias
+ */
 exports.listLocations = catchAsync(async (_req, res) => {
   const locations = await prisma.location.findMany({ orderBy: { name: 'asc' } });
   res.json({ locations });
 });
 
+/**
+ * POST /api/admin/locations
+ * Body: { name: string, description?: string }
+ */
 exports.createLocation = catchAsync(async (req, res) => {
   const { name, description } = req.body;
-  const loc = await prisma.location.create({ data: { name, description } });
+  if (!name || !name.trim()) {
+    return res.status(422).json({ error: 'name is required' });
+  }
+  const loc = await prisma.location.create({ data: { name: name.trim(), description } });
   res.status(201).json({ location: loc });
 });
 
+/**
+ * PUT /api/admin/locations/:id
+ * Body: { name?: string, description?: string }
+ */
 exports.updateLocation = catchAsync(async (req, res) => {
   const { name, description } = req.body;
+  if (name !== undefined && !name.trim()) {
+    return res.status(422).json({ error: 'name cannot be empty' });
+  }
+  const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Location not found' });
   const loc = await prisma.location.update({
     where: { id: req.params.id },
-    data:  { name, description },
+    data:  { name: name ? name.trim() : undefined, description },
   });
   res.json({ location: loc });
 });
 
+/**
+ * DELETE /api/admin/locations/:id
+ */
 exports.deleteLocation = catchAsync(async (req, res) => {
+  const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
+  if (!existing) return res.status(404).json({ error: 'Location not found' });
   await prisma.location.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
