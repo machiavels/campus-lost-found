@@ -3,7 +3,7 @@
  *
  * Usage:
  *   const notify = require('../services/notify');
- *   await notify(prisma, { userId, type, message, itemId });
+ *   await notify({ userId, type, message, itemId });
  *
  * Supported types (NotificationType enum):
  *   ITEM_VERIFIED | ITEM_REJECTED | NEW_MESSAGE | CLAIM_APPROVED | CLAIM_REJECTED
