@@ -72,7 +72,7 @@ Le détail complet du schéma est disponible dans `server/prisma/schema.prisma`.
 
 ---
 
-## Fonctionnalités (Périmètre MVP)
+## Fonctionnalités
 
 **Implémentées**
 
