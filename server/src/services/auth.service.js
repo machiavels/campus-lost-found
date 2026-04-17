@@ -11,11 +11,11 @@ const getAllowedDomains = () =>
 // ── Joi validation schemas ────────────────────────────────────────────────────
 
 exports.registerSchema = Joi.object({
-  username: Joi.string().alphanum().min(3).max(30).required().messages({
-    'string.alphanum': 'Le nom d\'utilisateur ne doit contenir que des caractères alphanumériques',
-    'string.min':      'Le nom d\'utilisateur doit comporter au moins 3 caractères',
-    'string.max':      'Le nom d\'utilisateur ne peut pas dépasser 30 caractères',
-    'any.required':    'Le nom d\'utilisateur est requis',
+  username: Joi.string().pattern(/^[a-zA-Z0-9_]+$/).min(3).max(30).required().messages({
+    'string.pattern.base': "Le nom d'utilisateur ne doit contenir que des lettres, chiffres ou underscores",
+    'string.min':          "Le nom d'utilisateur doit comporter au moins 3 caractères",
+    'string.max':          "Le nom d'utilisateur ne peut pas dépasser 30 caractères",
+    'any.required':        "Le nom d'utilisateur est requis",
   }),
   email: Joi.string()
     .email({ tlds: { allow: false } })
@@ -29,7 +29,7 @@ exports.registerSchema = Joi.object({
     })
     .messages({
       'string.email':  'Adresse e-mail invalide',
-      'any.required':  'L\'adresse e-mail est requise',
+      'any.required':  "L'adresse e-mail est requise",
       'email.domain':  `Seuls les emails institutionnels sont acceptés (${getAllowedDomains().join(', ')})`,
     }),
   password: Joi.string().min(8).required().messages({
@@ -41,7 +41,7 @@ exports.registerSchema = Joi.object({
 exports.loginSchema = Joi.object({
   email:    Joi.string().email({ tlds: { allow: false } }).required().messages({
     'string.email':  'Adresse e-mail invalide',
-    'any.required':  'L\'adresse e-mail est requise',
+    'any.required':  "L'adresse e-mail est requise",
   }),
   password: Joi.string().required().messages({
     'any.required': 'Le mot de passe est requis',
