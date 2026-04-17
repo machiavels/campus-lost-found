@@ -21,7 +21,6 @@ const ADMIN_INCLUDE = {
 
 /**
  * Strip fields that must not be exposed to regular users.
- * We remove claimRequests/_count detail and keep things clean.
  */
 function sanitizeForPublic(item) {
   // eslint-disable-next-line no-unused-vars
@@ -32,7 +31,7 @@ function sanitizeForPublic(item) {
 /**
  * GET /api/search
  * Query params:
- *   keyword     – full-text search in name + description
+ *   q           – full-text search in name + description (required)
  *   type        – LOST | FOUND
  *   categoryId  – UUID
  *   locationId  – UUID
@@ -46,7 +45,7 @@ exports.searchItems = catchAsync(async (req, res) => {
   const isAdmin = req.user?.role === 'ADMIN';
 
   const {
-    keyword,
+    q,
     type,
     categoryId,
     locationId,
@@ -59,36 +58,36 @@ exports.searchItems = catchAsync(async (req, res) => {
 
   const where = {};
 
-  // ── Status visibility ──────────────────────────────────────────────────────
+  // ── Status visibility ──────────────────────────────────────────────────
   if (isAdmin && status) {
-    where.status = status; // admins can filter by any status
+    where.status = status;
   } else {
-    where.status = 'VERIFIED'; // public only sees verified items
+    where.status = 'VERIFIED';
   }
 
-  // ── Type filter ────────────────────────────────────────────────────────────
+  // ── Type filter ──────────────────────────────────────────────────────
   if (type) where.reportType = type;
 
-  // ── Category & location ────────────────────────────────────────────────────
+  // ── Category & location ───────────────────────────────────────────────
   if (categoryId) where.categoryId = categoryId;
   if (locationId) where.locationId = locationId;
 
-  // ── Keyword full-text search ───────────────────────────────────────────────
-  if (keyword) {
+  // ── Keyword full-text search ───────────────────────────────────────────
+  if (q) {
     where.OR = [
-      { name:        { contains: keyword, mode: 'insensitive' } },
-      { description: { contains: keyword, mode: 'insensitive' } },
+      { name:        { contains: q, mode: 'insensitive' } },
+      { description: { contains: q, mode: 'insensitive' } },
     ];
   }
 
-  // ── Date range ─────────────────────────────────────────────────────────────
+  // ── Date range ──────────────────────────────────────────────────────
   if (from || to) {
     where.dateLostFound = {};
     if (from) where.dateLostFound.gte = new Date(from);
     if (to)   where.dateLostFound.lte = new Date(to);
   }
 
-  // ── Pagination ─────────────────────────────────────────────────────────────
+  // ── Pagination ──────────────────────────────────────────────────────
   const pageNum  = Math.max(1, Number(page));
   const limitNum = Math.min(100, Math.max(1, Number(limit)));
   const skip     = (pageNum - 1) * limitNum;
@@ -104,7 +103,6 @@ exports.searchItems = catchAsync(async (req, res) => {
     }),
   ]);
 
-  // Strip sensitive fields for non-admins
   const results = isAdmin ? items : items.map(sanitizeForPublic);
 
   res.json({
