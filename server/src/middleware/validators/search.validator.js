@@ -4,8 +4,12 @@ const Joi = require('joi');
  * Validation schema for GET /api/search query parameters.
  */
 exports.searchQuerySchema = Joi.object({
-  keyword:    Joi.string().trim().min(1).max(200).optional()
-                .messages({ 'string.min': 'Le mot-clé doit contenir au moins 1 caractère' }),
+  q:          Joi.string().trim().min(1).max(200).required()
+                .messages({
+                  'any.required': 'Le paramètre q est obligatoire',
+                  'string.empty': 'Le paramètre q ne peut pas être vide',
+                  'string.min':   'q doit contenir au moins 1 caractère',
+                }),
 
   type:       Joi.string().valid('LOST', 'FOUND').optional()
                 .messages({ 'any.only': 'type doit être LOST ou FOUND' }),
