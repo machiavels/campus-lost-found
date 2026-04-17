@@ -68,7 +68,8 @@ app.use(
       // Autoriser les appels sans origin (ex : curl, Postman, tests supertest)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      callback(new Error(`CORS: origin non autorisée — ${origin}`));
+      // callback(null, false) => 403 silencieux, sans polluer errorHandler/logs
+      return callback(null, false);
     },
     credentials: true,
   })

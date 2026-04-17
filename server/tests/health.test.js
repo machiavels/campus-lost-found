@@ -44,13 +44,12 @@ describe('GET /api/health', () => {
 });
 
 describe('CORS — origine non autorisée', () => {
-  it('rejette une origin non déclarée (pas de Access-Control-Allow-Origin)', async () => {
-    // En test, CLIENT_ORIGIN est vide → seules les requêtes sans origin passent
+  it('rejette une origin non déclarée avec 403, sans Access-Control-Allow-Origin', async () => {
+    // callback(null, false) => cors renvoie 403 silencieusement
     const r = await request(app)
       .get('/api/health')
       .set('Origin', 'https://evil.example.com');
-    // supertest ne suit pas les erreurs CORS comme un navigateur,
-    // mais le header Access-Control-Allow-Origin ne doit pas être présent
+    expect(r.status).toBe(403);
     expect(r.headers['access-control-allow-origin']).toBeUndefined();
   });
 });
