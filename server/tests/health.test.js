@@ -44,12 +44,13 @@ describe('GET /api/health', () => {
 });
 
 describe('CORS — origine non autorisée', () => {
-  it('rejette une origin non déclarée avec 403, sans Access-Control-Allow-Origin', async () => {
-    // callback(null, false) => cors renvoie 403 silencieusement
+  it('n\'envoie pas Access-Control-Allow-Origin pour une origin non déclarée', async () => {
+    // callback(null, false) => cors omet le header ACAO sans bloquer la requête côté serveur.
+    // Le blocage réel est effectué par le navigateur (politique CORS).
+    // Supertest ne simule pas un navigateur : on vérifie uniquement l'absence du header.
     const r = await request(app)
       .get('/api/health')
       .set('Origin', 'https://evil.example.com');
-    expect(r.status).toBe(403);
     expect(r.headers['access-control-allow-origin']).toBeUndefined();
   });
 });
