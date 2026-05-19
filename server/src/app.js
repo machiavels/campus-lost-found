@@ -1,9 +1,10 @@
 require('dotenv').config();
-const express = require('express');
-const helmet  = require('helmet');
-const cors    = require('cors');
-const morgan  = require('morgan');
-const path    = require('path');
+const express      = require('express');
+const helmet       = require('helmet');
+const cors         = require('cors');
+const morgan       = require('morgan');
+const cookieParser = require('cookie-parser');
+const path         = require('path');
 
 const authRoutes         = require('./routes/auth.routes');
 const userRoutes         = require('./routes/user.routes');
@@ -22,11 +23,8 @@ const app = express();
 // ── Security headers ──────────────────────────────────────────────────────────
 app.use(
   helmet({
-    // X-Frame-Options: DENY — empêche le clickjacking total
     frameguard: { action: 'deny' },
-    // X-Content-Type-Options: nosniff — empêche le MIME sniffing
     noSniff: true,
-    // Content-Security-Policy adapté à une API REST pure (pas de rendu HTML)
     contentSecurityPolicy: {
       directives: {
         defaultSrc:  ["'none'"],
@@ -40,20 +38,18 @@ app.use(
         formAction:  ["'none'"],
       },
     },
-    // Strict-Transport-Security — force HTTPS (1 an, inclure sous-domaines)
     hsts: {
       maxAge:            31_536_000,
       includeSubDomains: true,
       preload:           true,
     },
-    // Masquer la signature Express
     hidePoweredBy: true,
   })
 );
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
-app.use('/api', globalLimiter);    // protection globale sur tout /api
-app.use('/api/auth', authLimiter); // protection renforcée anti brute-force
+app.use('/api', globalLimiter);
+app.use('/api/auth', authLimiter);
 
 // ── No-cache pour toutes les réponses API ─────────────────────────────────────
 app.use('/api', (_req, res, next) => {
@@ -70,10 +66,8 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || '')
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Autoriser les appels sans origin (ex : curl, Postman, tests supertest)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      // callback(null, false) => 403 silencieux, sans polluer errorHandler/logs
       return callback(null, false);
     },
     credentials: true,
@@ -81,6 +75,9 @@ app.use(
 );
 
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+
+// ── Cookie parser (requis pour refresh token) ─────────────────────────────────
+app.use(cookieParser());
 
 // ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -96,9 +93,9 @@ app.use('/api/items',         itemRoutes);
 app.use('/api/messages',      messageRoutes);
 app.use('/api/claims',        claimRoutes);
 app.use('/api/admin',         adminRoutes);
-app.use('/api/search',        searchRoutes);        // GET /api/search — issue #5
-app.use('/api/notifications', notificationRoutes);  // GET|PATCH /api/notifications — issue #10
-app.use('/api',               referenceRoutes);     // GET /api/categories & /api/locations — issue #8
+app.use('/api/search',        searchRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api',               referenceRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
