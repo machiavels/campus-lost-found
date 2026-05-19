@@ -15,6 +15,7 @@ const searchRoutes       = require('./routes/search.routes');
 const referenceRoutes    = require('./routes/reference.routes');      // issue #8 — public GET
 const notificationRoutes = require('./routes/notification.routes');   // issue #10 — in-app notifications
 const { errorHandler }   = require('./middleware/error.middleware');
+const { globalLimiter, authLimiter } = require('./middleware/rateLimiter.middleware'); // issue #21
 
 const app = express();
 
@@ -49,6 +50,10 @@ app.use(
     hidePoweredBy: true,
   })
 );
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+app.use('/api', globalLimiter);    // protection globale sur tout /api
+app.use('/api/auth', authLimiter); // protection renforcée anti brute-force
 
 // ── No-cache pour toutes les réponses API ─────────────────────────────────────
 app.use('/api', (_req, res, next) => {
