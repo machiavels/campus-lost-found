@@ -1,6 +1,8 @@
-const bcrypt = require('bcryptjs');
-const jwt    = require('jsonwebtoken');
-const Joi    = require('joi');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
+const crypto  = require('crypto');
+const Joi     = require('joi');
+const prisma  = require('../config/prisma');
 
 // ── Campus email domain whitelist (from .env) ─────────────────────────────────
 const getAllowedDomains = () =>
@@ -63,8 +65,56 @@ exports.validateEmailDomain = (email) => {
 exports.hashPassword   = (plain) => bcrypt.hash(plain, 12);
 exports.verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 
-// ── JWT helpers ───────────────────────────────────────────────────────────────
+// ── JWT — Access token (15 min) ───────────────────────────────────────────────
 exports.signToken = (userId) =>
-  jwt.sign({ sub: userId }, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  jwt.sign({ sub: userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
+
+exports.generateAccessToken = (user) =>
+  jwt.sign(
+    { sub: user.id, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m' }
+  );
+
+// ── Refresh token (7 days, stored in DB) ─────────────────────────────────────
+const REFRESH_EXPIRY_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRY_DAYS || '7', 10);
+
+exports.generateRefreshToken = async (userId) => {
+  const token     = crypto.randomBytes(64).toString('hex');
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + REFRESH_EXPIRY_DAYS);
+
+  await prisma.refreshToken.create({ data: { token, userId, expiresAt } });
+  return token;
+};
+
+exports.rotateRefreshToken = async (oldToken) => {
+  const existing = await prisma.refreshToken.findUnique({
+    where:   { token: oldToken },
+    include: { user: true },
   });
+
+  if (!existing) {
+    const err = new Error('Refresh token invalide');
+    err.statusCode = 401;
+    throw err;
+  }
+  if (existing.expiresAt < new Date()) {
+    await prisma.refreshToken.delete({ where: { token: oldToken } });
+    const err = new Error('Refresh token expiré, veuillez vous reconnecter');
+    err.statusCode = 401;
+    throw err;
+  }
+
+  // Rotation : supprimer l'ancien, émettre un nouveau
+  await prisma.refreshToken.delete({ where: { token: oldToken } });
+
+  const newRefreshToken = await exports.generateRefreshToken(existing.userId);
+  const newAccessToken  = exports.generateAccessToken(existing.user);
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+};
+
+exports.revokeRefreshToken = async (token) => {
+  await prisma.refreshToken.deleteMany({ where: { token } });
+};
