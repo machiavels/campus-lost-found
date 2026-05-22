@@ -15,12 +15,13 @@ const adminRoutes        = require('./routes/admin.routes');
 const searchRoutes       = require('./routes/search.routes');
 const referenceRoutes    = require('./routes/reference.routes');      // issue #8 — public GET
 const notificationRoutes = require('./routes/notification.routes');   // issue #10 — in-app notifications
+const photoRoutes        = require('./routes/photo.routes');           // issue #24 — photo upload
 const { errorHandler }   = require('./middleware/error.middleware');
 const { globalLimiter, authLimiter } = require('./middleware/rateLimiter.middleware'); // issue #21
 
 const app = express();
 
-// ── Security headers ──────────────────────────────────────────────────────────
+// ── Security headers ─────────────────────────────────────────────────────────────
 app.use(
   helmet({
     frameguard: { action: 'deny' },
@@ -47,17 +48,17 @@ app.use(
   })
 );
 
-// ── Rate limiting ─────────────────────────────────────────────────────────────
+// ── Rate limiting ──────────────────────────────────────────────────────────────
 app.use('/api', globalLimiter);
 app.use('/api/auth', authLimiter);
 
-// ── No-cache pour toutes les réponses API ─────────────────────────────────────
+// ── No-cache pour toutes les réponses API ─────────────────────────────────────────────
 app.use('/api', (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
 });
 
-// ── CORS — origines autorisées depuis .env uniquement ─────────────────────────
+// ── CORS — origines autorisées depuis .env uniquement ───────────────────────────────
 const allowedOrigins = (process.env.CLIENT_ORIGIN || '')
   .split(',')
   .map((o) => o.trim())
@@ -76,17 +77,17 @@ app.use(
 
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ── Cookie parser (requis pour refresh token) ─────────────────────────────────
+// ── Cookie parser (requis pour refresh token) ─────────────────────────────────────────
 app.use(cookieParser());
 
-// ── Body parsing ──────────────────────────────────────────────────────────────
+// ── Body parsing ────────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// ── Static uploads ────────────────────────────────────────────────────────────
+// ── Static uploads ───────────────────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────────────
 app.use('/api/auth',          authRoutes);
 app.use('/api/users',         userRoutes);
 app.use('/api/items',         itemRoutes);
@@ -95,18 +96,19 @@ app.use('/api/claims',        claimRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/search',        searchRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api',               photoRoutes);           // /api/items/:id/photos + /api/photos/:id
 app.use('/api',               referenceRoutes);
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Health check ────────────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-// ── Global error handler ──────────────────────────────────────────────────────
+// ── Global error handler ─────────────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start server only when run directly (not when required by tests) ──────────
+// ── Start server only when run directly (not when required by tests) ──────────────────
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`🚀  Server running on http://localhost:${PORT}`));
+  app.listen(PORT, () => console.log(`\uD83D\uDE80  Server running on http://localhost:${PORT}`));
 }
 
 module.exports = app;
