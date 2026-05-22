@@ -1,0 +1,579 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Campus Lost & Found API",
+    "version": "1.0.0",
+    "description": "REST API for the Campus Lost & Found platform. Allows students to report lost/found items, submit claims, exchange messages, and manage notifications.",
+    "contact": {
+      "name": "Campus Lost & Found",
+      "url": "https://github.com/machiavels/campus-lost-found"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:{port}/api",
+      "description": "Local development server",
+      "variables": {
+        "port": { "default": "3000", "description": "Port defined by PORT env var" }
+      }
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token obtained from POST /auth/login or POST /auth/refresh"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": { "message": { "type": "string", "example": "Unauthorized" } }
+      },
+      "PaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total":      { "type": "integer", "example": 42 },
+          "page":       { "type": "integer", "example": 1 },
+          "limit":      { "type": "integer", "example": 20 },
+          "totalPages": { "type": "integer", "example": 3 }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id":        { "type": "string", "format": "uuid" },
+          "email":     { "type": "string", "format": "email", "example": "alice@campus.fr" },
+          "username":  { "type": "string", "example": "alice42" },
+          "role":      { "type": "string", "enum": ["USER", "ADMIN"], "example": "USER" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id":          { "type": "string", "format": "uuid" },
+          "title":       { "type": "string", "example": "Blue backpack" },
+          "description": { "type": "string", "example": "Found near the library entrance" },
+          "type":        { "type": "string", "enum": ["LOST", "FOUND"], "example": "FOUND" },
+          "status":      { "type": "string", "enum": ["PENDING", "ACTIVE", "CLAIMED", "REJECTED"], "example": "ACTIVE" },
+          "categoryId":  { "type": "integer", "example": 1 },
+          "locationId":  { "type": "integer", "example": 3 },
+          "userId":      { "type": "string", "format": "uuid" },
+          "createdAt":   { "type": "string", "format": "date-time" },
+          "updatedAt":   { "type": "string", "format": "date-time" }
+        }
+      },
+      "Claim": {
+        "type": "object",
+        "properties": {
+          "id":        { "type": "string", "format": "uuid" },
+          "itemId":    { "type": "string", "format": "uuid" },
+          "userId":    { "type": "string", "format": "uuid" },
+          "message":   { "type": "string", "example": "I lost this backpack on Monday" },
+          "status":    { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"], "example": "PENDING" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id":         { "type": "string", "format": "uuid" },
+          "content":    { "type": "string", "example": "Hi, is this backpack still available?" },
+          "itemId":     { "type": "string", "format": "uuid" },
+          "senderId":   { "type": "string", "format": "uuid" },
+          "receiverId": { "type": "string", "format": "uuid" },
+          "read":       { "type": "boolean", "example": false },
+          "createdAt":  { "type": "string", "format": "date-time" }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id":        { "type": "string", "format": "uuid" },
+          "type":      { "type": "string", "example": "CLAIM_APPROVED" },
+          "message":   { "type": "string", "example": "Your claim has been approved" },
+          "read":      { "type": "boolean", "example": false },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id":   { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Electronics" }
+        }
+      },
+      "Location": {
+        "type": "object",
+        "properties": {
+          "id":   { "type": "integer", "example": 1 },
+          "name": { "type": "string", "example": "Library" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Register a new account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password", "username"],
+                "properties": {
+                  "email":    { "type": "string", "format": "email", "example": "alice@campus.fr" },
+                  "password": { "type": "string", "format": "password", "minLength": 8, "example": "Passw0rd!" },
+                  "username": { "type": "string", "example": "alice42" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Account created" },
+          "400": { "description": "Validation error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "Email already in use", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login and get tokens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email":    { "type": "string", "format": "email", "example": "alice@campus.fr" },
+                  "password": { "type": "string", "format": "password", "example": "Passw0rd!" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful" },
+          "401": { "description": "Invalid credentials", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Rotate refresh token and get a new access token",
+        "responses": {
+          "200": { "description": "New access token issued" },
+          "401": { "description": "Missing or invalid refresh token" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout — revoke refresh token and clear cookie",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "204": { "description": "Logged out" } }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get the authenticated user profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Current user", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/User" } } } },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/items": {
+      "get": {
+        "tags": ["Items"],
+        "summary": "List active items (public, auth optional)",
+        "parameters": [
+          { "in": "query", "name": "page",   "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit",  "schema": { "type": "integer", "default": 20 } },
+          { "in": "query", "name": "type",   "schema": { "type": "string", "enum": ["LOST", "FOUND"] } },
+          { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["PENDING", "ACTIVE", "CLAIMED", "REJECTED"] } }
+        ],
+        "responses": { "200": { "description": "Paginated list of items" } }
+      },
+      "post": {
+        "tags": ["Items"],
+        "summary": "Create a new lost/found item",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "201": { "description": "Item created" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/items/{id}": {
+      "get": {
+        "tags": ["Items"],
+        "summary": "Get a single item",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": {
+          "200": { "description": "Item object" },
+          "404": { "description": "Not found" }
+        }
+      },
+      "put": {
+        "tags": ["Items"],
+        "summary": "Update an item",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Updated item" }, "403": { "description": "Forbidden" } }
+      },
+      "delete": {
+        "tags": ["Items"],
+        "summary": "Delete an item",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "204": { "description": "Deleted" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/items/{id}/close": {
+      "patch": {
+        "tags": ["Items"],
+        "summary": "Close an item (mark as CLAIMED)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Item closed" } }
+      }
+    },
+    "/items/{id}/photos": {
+      "post": {
+        "tags": ["Photos"],
+        "summary": "Upload photos for an item (max 5)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "201": { "description": "Photos uploaded" } }
+      }
+    },
+    "/photos/{id}": {
+      "delete": {
+        "tags": ["Photos"],
+        "summary": "Delete a photo",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "204": { "description": "Deleted" }, "404": { "description": "Not found" } }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get own profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "User profile" } }
+      },
+      "put": {
+        "tags": ["Users"],
+        "summary": "Update own profile",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Updated profile" } }
+      },
+      "delete": {
+        "tags": ["Users"],
+        "summary": "Delete own account (RGPD)",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "204": { "description": "Account deleted" } }
+      }
+    },
+    "/users/me/password": {
+      "patch": {
+        "tags": ["Users"],
+        "summary": "Change own password",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "204": { "description": "Password changed" } }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "tags": ["Users"],
+        "summary": "Get a user's public profile",
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Public profile" }, "404": { "description": "Not found" } }
+      }
+    },
+    "/claims": {
+      "post": {
+        "tags": ["Claims"],
+        "summary": "Submit a claim",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "201": { "description": "Claim submitted" } }
+      },
+      "get": {
+        "tags": ["Claims"],
+        "summary": "List claims",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "List of claims" } }
+      }
+    },
+    "/claims/my": {
+      "get": {
+        "tags": ["Claims"],
+        "summary": "Get own claims",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Own claims" } }
+      }
+    },
+    "/claims/{id}/review": {
+      "patch": {
+        "tags": ["Claims"],
+        "summary": "Review a claim (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Claim reviewed" }, "403": { "description": "Forbidden" } }
+      }
+    },
+    "/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get inbox",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Inbox messages" } }
+      },
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Send a message",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "201": { "description": "Message sent" } }
+      }
+    },
+    "/messages/conversations": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "List grouped conversations",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Conversations" } }
+      }
+    },
+    "/messages/thread/{itemId}/{partnerId}": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get thread with a user about an item",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "in": "path", "name": "itemId",    "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "in": "path", "name": "partnerId", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": { "200": { "description": "Thread messages" } }
+      }
+    },
+    "/messages/item/{itemId}": {
+      "get": {
+        "tags": ["Messages"],
+        "summary": "Get all messages for an item",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "itemId", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Item messages" } }
+      }
+    },
+    "/messages/{id}/read": {
+      "patch": {
+        "tags": ["Messages"],
+        "summary": "Mark a message as read",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Marked as read" } }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "List notifications",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Notification list" } }
+      }
+    },
+    "/notifications/stream": {
+      "get": {
+        "tags": ["Notifications"],
+        "summary": "SSE real-time stream",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "SSE stream opened", "content": { "text/event-stream": { "schema": { "type": "string" } } } } }
+      }
+    },
+    "/notifications/read-all": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Mark all notifications as read",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "204": { "description": "All read" } }
+      }
+    },
+    "/notifications/{id}/read": {
+      "patch": {
+        "tags": ["Notifications"],
+        "summary": "Mark one notification as read",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Notification marked read" } }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": ["Search"],
+        "summary": "Search items",
+        "parameters": [
+          { "in": "query", "name": "keyword",    "schema": { "type": "string" } },
+          { "in": "query", "name": "type",       "schema": { "type": "string", "enum": ["LOST", "FOUND"] } },
+          { "in": "query", "name": "categoryId", "schema": { "type": "integer" } },
+          { "in": "query", "name": "locationId", "schema": { "type": "integer" } },
+          { "in": "query", "name": "from",       "schema": { "type": "string", "format": "date" } },
+          { "in": "query", "name": "to",         "schema": { "type": "string", "format": "date" } },
+          { "in": "query", "name": "page",       "schema": { "type": "integer", "default": 1 } },
+          { "in": "query", "name": "limit",      "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": { "200": { "description": "Search results" } }
+      }
+    },
+    "/categories": {
+      "get": {
+        "tags": ["Reference"],
+        "summary": "List all categories (public)",
+        "responses": { "200": { "description": "Categories list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Category" } } } } } }
+      }
+    },
+    "/locations": {
+      "get": {
+        "tags": ["Reference"],
+        "summary": "List all locations (public)",
+        "responses": { "200": { "description": "Locations list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Location" } } } } } }
+      }
+    },
+    "/admin/items": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List items pending moderation",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Pending items" }, "403": { "description": "Admin only" } }
+      }
+    },
+    "/admin/items/{id}/moderate": {
+      "patch": {
+        "tags": ["Admin"],
+        "summary": "Moderate an item",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Moderated" } }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List all users",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "User list" } }
+      }
+    },
+    "/admin/users/{id}": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "Get full user detail",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "User detail" } }
+      },
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a user",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string", "format": "uuid" } }],
+        "responses": { "200": { "description": "Updated" } }
+      }
+    },
+    "/admin/categories": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List categories (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Categories" } }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create a category",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/admin/categories/{id}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a category",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a category",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/admin/locations": {
+      "get": {
+        "tags": ["Admin"],
+        "summary": "List locations (admin)",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "200": { "description": "Locations" } }
+      },
+      "post": {
+        "tags": ["Admin"],
+        "summary": "Create a location",
+        "security": [{ "BearerAuth": [] }],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/admin/locations/{id}": {
+      "put": {
+        "tags": ["Admin"],
+        "summary": "Update a location",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "200": { "description": "Updated" } }
+      },
+      "delete": {
+        "tags": ["Admin"],
+        "summary": "Delete a location",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "integer" } }],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "responses": { "200": { "description": "API is running", "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string", "example": "ok" }, "timestamp": { "type": "string", "format": "date-time" } } } } } } }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Auth",          "description": "Authentication — register, login, token refresh, logout" },
+    { "name": "Items",         "description": "Lost & found items" },
+    { "name": "Photos",        "description": "Item photo upload and deletion" },
+    { "name": "Users",         "description": "User profile management" },
+    { "name": "Claims",        "description": "Claim requests" },
+    { "name": "Messages",      "description": "In-app messaging" },
+    { "name": "Notifications", "description": "In-app notifications and SSE stream" },
+    { "name": "Search",        "description": "Full-text search across items" },
+    { "name": "Reference",     "description": "Public reference data — categories and locations" },
+    { "name": "Admin",         "description": "Admin-only endpoints" },
+    { "name": "Health",        "description": "Health check" }
+  ]
+}

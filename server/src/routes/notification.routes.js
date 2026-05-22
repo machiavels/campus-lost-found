@@ -9,20 +9,91 @@ const {
   markOneRead,
 } = require('../controllers/notification.controller');
 
-// All notification routes require authentication
 router.use(authenticate);
 
-// GET  /api/notifications            — list all notifications for the current user
+/**
+ * @openapi
+ * tags:
+ *   - name: Notifications
+ *     description: In-app notifications and SSE real-time stream
+ */
+
+/**
+ * @openapi
+ * /notifications:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: List all notifications for the authenticated user
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of notifications
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Notification' }
+ */
 router.get('/',              getNotifications);
 
-// GET  /api/notifications/stream     — SSE stream for real-time push notifications
-// MUST be declared before /:id/read so Express does not treat 'stream' as an :id
+/**
+ * @openapi
+ * /notifications/stream:
+ *   get:
+ *     tags: [Notifications]
+ *     summary: SSE stream — real-time push notifications
+ *     description: |
+ *       Opens a Server-Sent Events connection. The client receives `data:` events
+ *       whenever a new notification is created for the authenticated user.
+ *       Keep this connection alive; the server sends a heartbeat every 30 s.
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: SSE stream opened
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ *               example: "data: {\"type\":\"CLAIM_APPROVED\",\"message\":\"Your claim was approved\"}\n\n"
+ */
 router.get('/stream',        streamNotifications);
 
-// PATCH /api/notifications/read-all  — mark all as read
+/**
+ * @openapi
+ * /notifications/read-all:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark all notifications as read
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       204:
+ *         description: All notifications marked as read
+ */
 router.patch('/read-all',    markAllRead);
 
-// PATCH /api/notifications/:id/read  — mark one as read
+/**
+ * @openapi
+ * /notifications/{id}/read:
+ *   patch:
+ *     tags: [Notifications]
+ *     summary: Mark a single notification as read
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Notification marked as read
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Notification' }
+ */
 router.patch('/:id/read',   markOneRead);
 
 module.exports = router;

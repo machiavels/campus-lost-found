@@ -21,6 +21,39 @@ const { globalLimiter, authLimiter } = require('./middleware/rateLimiter.middlew
 
 const app = express();
 
+// ── Swagger UI — development only (issue #33) ────────────────────────────────────────
+if (process.env.NODE_ENV !== 'production') {
+  const swaggerUi   = require('swagger-ui-express');
+  const swaggerSpec = require('./config/swagger');
+
+  // Relax CSP only for /api/docs so Swagger UI assets load correctly
+  app.use(
+    '/api/docs',
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc:  ["'self'", "'unsafe-inline'"],
+          styleSrc:   ["'self'", "'unsafe-inline'"],
+          imgSrc:     ["'self'", 'data:', 'https://validator.swagger.io'],
+          connectSrc: ["'self'"],
+        },
+      },
+    }),
+    swaggerUi.serve,
+    swaggerUi.setup(swaggerSpec, {
+      customSiteTitle: 'Campus Lost & Found — API Docs',
+      swaggerOptions:  { persistAuthorization: true },
+    })
+  );
+
+  // Expose raw OpenAPI JSON
+  app.get('/api/docs.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+}
+
 // ── Security headers ─────────────────────────────────────────────────────────────
 app.use(
   helmet({
