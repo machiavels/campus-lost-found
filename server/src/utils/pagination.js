@@ -2,13 +2,16 @@
 
 /**
  * Parse and validate pagination query params.
- * @param {object} query  – req.query
+ * @param {object} query    – req.query
  * @param {number} maxLimit – hard cap (default 100)
  * @returns {{ page: number, limit: number, skip: number }}
  */
 function parsePagination(query, maxLimit = 100) {
-  const page  = Math.max(1, parseInt(query.page,  10) || 1);
-  const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit, 10) || 20));
+  const rawPage  = parseInt(query.page,  10);
+  const rawLimit = parseInt(query.limit, 10);
+
+  const page  = Math.max(1, Number.isNaN(rawPage)  ? 1  : rawPage);
+  const limit = Math.min(maxLimit, Math.max(1, Number.isNaN(rawLimit) ? 20 : rawLimit));
   const skip  = (page - 1) * limit;
   return { page, limit, skip };
 }
