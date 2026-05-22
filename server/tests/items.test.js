@@ -11,7 +11,6 @@ beforeAll(async () => {
   const { token } = await registerAndLogin(EMAIL);
   TOKEN = token;
 
-  // Fetch real UUIDs from the seeded database
   const catRes = await request(app).get('/api/categories');
   const cats   = catRes.body.categories ?? catRes.body;
   CATEGORY_ID  = cats[0]?.id;
@@ -28,6 +27,10 @@ describe('GET /api/items', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('items');
     expect(Array.isArray(res.body.items)).toBe(true);
+    // meta shape
+    expect(res.body).toHaveProperty('meta');
+    expect(typeof res.body.meta.total).toBe('number');
+    expect(typeof res.body.meta.totalPages).toBe('number');
   });
 
   it('accepts filter params without error', async () => {
@@ -74,8 +77,7 @@ describe('POST /api/items', () => {
 // ─── GET /api/items/:id ────────────────────────────────────────────────────────
 describe('GET /api/items/:id', () => {
   it('returns the item by id (as owner, item may be PENDING)', async () => {
-    if (!ITEM_ID) return; // skip if creation failed
-    // Must send token: newly created items are PENDING and only visible to owner/admin
+    if (!ITEM_ID) return;
     const res = await request(app)
       .get(`/api/items/${ITEM_ID}`)
       .set('Authorization', `Bearer ${TOKEN}`);

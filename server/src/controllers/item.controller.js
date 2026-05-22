@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
+const { parsePagination, buildMeta } = require('../utils/pagination');
 
 const ITEM_INCLUDE = {
   reporter:  { select: { id: true, username: true } },
@@ -21,22 +22,21 @@ const ITEM_INCLUDE = {
 exports.listItems = catchAsync(async (req, res) => {
   const {
     keyword, type, status, categoryId, locationId,
-    from, to, page = 1, limit = 20,
+    from, to,
   } = req.query;
+
+  const { page, limit, skip } = parsePagination(req.query);
 
   const where = {};
 
   if (req.user?.role === 'ADMIN') {
-    // Admins can filter by any status; default shows all
     if (status) where.status = status;
   } else if (req.user) {
-    // Authenticated non-admin: VERIFIED items + their own items of any status
     where.OR = [
       { status: 'VERIFIED' },
       { reporterId: req.user.id },
     ];
   } else {
-    // Unauthenticated public: VERIFIED only
     where.status = 'VERIFIED';
   }
 
@@ -58,26 +58,22 @@ exports.listItems = catchAsync(async (req, res) => {
     if (to)   where.dateLostFound.lte = new Date(to);
   }
 
-  const skip  = (Number(page) - 1) * Number(limit);
-  const total = await prisma.item.count({ where });
-  const items = await prisma.item.findMany({
-    where,
-    include: ITEM_INCLUDE,
-    orderBy: { createdAt: 'desc' },
-    skip,
-    take: Number(limit),
-  });
+  const [total, items] = await Promise.all([
+    prisma.item.count({ where }),
+    prisma.item.findMany({
+      where,
+      include: ITEM_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+  ]);
 
-  res.json({ items, total, page: Number(page), limit: Number(limit) });
+  res.json({ items, meta: buildMeta(total, page, limit) });
 });
 
 /**
  * GET /api/items/:id
- *
- * Visibility rules (same as listItems):
- *   - ADMIN           → always visible
- *   - Author          → always visible (own item)
- *   - Everyone else   → VERIFIED only
  */
 exports.getItem = catchAsync(async (req, res) => {
   const item = await prisma.item.findUnique({
@@ -99,8 +95,6 @@ exports.getItem = catchAsync(async (req, res) => {
 
 /**
  * POST /api/items
- * Body: name, description, reportType, locationId, categoryId, dateLostFound
- * Files: photos[] (multipart)
  */
 exports.createItem = catchAsync(async (req, res) => {
   const { name, description, reportType, locationId, categoryId, dateLostFound } = req.body;
@@ -110,7 +104,6 @@ exports.createItem = catchAsync(async (req, res) => {
       name, description, reportType, locationId, categoryId,
       dateLostFound: dateLostFound ? new Date(dateLostFound) : null,
       reporterId: req.user.id,
-      // photos created in the same transaction
       photos: req.files?.length
         ? { create: req.files.map(f => ({ url: `/uploads/${f.filename}` })) }
         : undefined,
@@ -136,7 +129,7 @@ exports.updateItem = catchAsync(async (req, res) => {
     where: { id: req.params.id },
     data: { name, description, locationId, categoryId,
             dateLostFound: dateLostFound ? new Date(dateLostFound) : undefined,
-            status: 'PENDING' }, // back to moderation after edit
+            status: 'PENDING' },
     include: ITEM_INCLUDE,
   });
   res.json({ item: updated });
@@ -156,7 +149,7 @@ exports.deleteItem = catchAsync(async (req, res) => {
 });
 
 /**
- * PATCH /api/items/:id/close  — reporter marks their item as recovered
+ * PATCH /api/items/:id/close
  */
 exports.closeItem = catchAsync(async (req, res) => {
   const item = await prisma.item.findUnique({ where: { id: req.params.id } });

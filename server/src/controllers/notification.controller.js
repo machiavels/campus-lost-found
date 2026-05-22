@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
+const { parsePagination, buildMeta } = require('../utils/pagination');
 
 const NOTIF_SELECT = {
   id: true,
@@ -12,23 +13,30 @@ const NOTIF_SELECT = {
 
 /**
  * GET /api/notifications
- * Returns all notifications for the authenticated user, newest first.
+ * Paginated; also returns unreadCount across ALL notifications (not just current page).
  */
 exports.getNotifications = catchAsync(async (req, res) => {
-  const notifications = await prisma.notification.findMany({
-    where:   { userId: req.user.id },
-    select:  NOTIF_SELECT,
-    orderBy: { createdAt: 'desc' },
-  });
+  const { page, limit, skip } = parsePagination(req.query);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const where = { userId: req.user.id };
 
-  res.json({ notifications, unreadCount });
+  const [total, notifications, unreadCount] = await Promise.all([
+    prisma.notification.count({ where }),
+    prisma.notification.findMany({
+      where,
+      select:  NOTIF_SELECT,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+    prisma.notification.count({ where: { userId: req.user.id, read: false } }),
+  ]);
+
+  res.json({ notifications, unreadCount, meta: buildMeta(total, page, limit) });
 });
 
 /**
  * PATCH /api/notifications/read-all
- * Marks every unread notification of the authenticated user as read.
  */
 exports.markAllRead = catchAsync(async (req, res) => {
   const { count } = await prisma.notification.updateMany({
@@ -41,8 +49,6 @@ exports.markAllRead = catchAsync(async (req, res) => {
 
 /**
  * PATCH /api/notifications/:id/read
- * Marks a single notification as read.
- * Only the owner of the notification can mark it.
  */
 exports.markOneRead = catchAsync(async (req, res) => {
   const notif = await prisma.notification.findUnique({

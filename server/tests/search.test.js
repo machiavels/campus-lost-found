@@ -9,6 +9,10 @@ describe('GET /api/search', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('results');
     expect(Array.isArray(res.body.results)).toBe(true);
+    // standardized meta
+    expect(res.body).toHaveProperty('meta');
+    expect(typeof res.body.meta.total).toBe('number');
+    expect(typeof res.body.meta.totalPages).toBe('number');
   });
 
   it('returns 400 when q param is missing', async () => {

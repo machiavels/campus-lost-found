@@ -1,8 +1,8 @@
 const prisma  = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
 const notify  = require('../services/notify');
+const { parsePagination, buildMeta } = require('../utils/pagination');
 
-// Safe select — never exposes email or phone
 const MSG_SELECT = {
   id: true, content: true, sentAt: true, readAt: true,
   sender:    { select: { id: true, username: true } },
@@ -10,26 +10,32 @@ const MSG_SELECT = {
   item:      { select: { id: true, name: true } },
 };
 
-/** GET /api/messages — inbox (all received messages) */
+/** GET /api/messages — inbox (paginated) */
 exports.getInbox = catchAsync(async (req, res) => {
-  const messages = await prisma.message.findMany({
-    where:   { recipientId: req.user.id },
-    select:  MSG_SELECT,
-    orderBy: { sentAt: 'desc' },
-  });
-  res.json({ messages });
+  const { page, limit, skip } = parsePagination(req.query);
+
+  const where = { recipientId: req.user.id };
+  const [total, messages] = await Promise.all([
+    prisma.message.count({ where }),
+    prisma.message.findMany({
+      where,
+      select:  MSG_SELECT,
+      orderBy: { sentAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  res.json({ messages, meta: buildMeta(total, page, limit) });
 });
 
 /**
- * GET /api/messages/conversations
- * Returns one representative message per (item, partner) pair
- * so the front-end can render a conversation list.
- * No email or phone is ever included.
+ * GET /api/messages/conversations (paginated)
  */
 exports.getConversations = catchAsync(async (req, res) => {
   const userId = req.user.id;
+  const { page, limit } = parsePagination(req.query);
 
-  // Fetch every message where the user is sender or recipient
   const all = await prisma.message.findMany({
     where: {
       OR: [{ senderId: userId }, { recipientId: userId }],
@@ -38,7 +44,7 @@ exports.getConversations = catchAsync(async (req, res) => {
     orderBy: { sentAt: 'desc' },
   });
 
-  // Group by "itemId|partnerId" — keep only the latest message per thread
+  // Deduplicate by thread key
   const seen = new Map();
   for (const msg of all) {
     const partnerId = msg.sender.id === userId ? msg.recipient.id : msg.sender.id;
@@ -46,10 +52,14 @@ exports.getConversations = catchAsync(async (req, res) => {
     if (!seen.has(key)) seen.set(key, msg);
   }
 
-  res.json({ conversations: Array.from(seen.values()) });
+  const conversations = Array.from(seen.values());
+  const total = conversations.length;
+  const paged = conversations.slice((page - 1) * limit, page * limit);
+
+  res.json({ conversations: paged, meta: buildMeta(total, page, limit) });
 });
 
-/** GET /api/messages/item/:itemId — full thread for an item (both directions) */
+/** GET /api/messages/item/:itemId */
 exports.getThreadByItem = catchAsync(async (req, res) => {
   const messages = await prisma.message.findMany({
     where: {
@@ -64,15 +74,11 @@ exports.getThreadByItem = catchAsync(async (req, res) => {
 
 /**
  * GET /api/messages/thread/:itemId/:partnerId
- * Returns the conversation between the authenticated user and :partnerId
- * about item :itemId.
- * Only sender and recipient can read their own thread.
  */
 exports.getThread = catchAsync(async (req, res) => {
   const userId    = req.user.id;
   const { itemId, partnerId } = req.params;
 
-  // Guard: the caller must be one of the two parties
   if (userId === partnerId) {
     return res.status(400).json({ error: 'partnerId must differ from your own id' });
   }
@@ -92,7 +98,7 @@ exports.getThread = catchAsync(async (req, res) => {
   res.json({ messages });
 });
 
-/** POST /api/messages — send a message linked to an item */
+/** POST /api/messages */
 exports.sendMessage = catchAsync(async (req, res) => {
   const { recipientId, itemId, content } = req.body;
 
@@ -103,11 +109,9 @@ exports.sendMessage = catchAsync(async (req, res) => {
     return res.status(400).json({ error: 'Cannot send a message to yourself' });
   }
 
-  // Verify item exists
   const item = await prisma.item.findUnique({ where: { id: itemId }, select: { id: true, name: true } });
   if (!item) return res.status(404).json({ error: 'Item not found' });
 
-  // Verify recipient exists
   const recipient = await prisma.user.findUnique({ where: { id: recipientId }, select: { id: true, username: true } });
   if (!recipient) return res.status(404).json({ error: 'Recipient not found' });
 
@@ -116,7 +120,6 @@ exports.sendMessage = catchAsync(async (req, res) => {
     select: MSG_SELECT,
   });
 
-  // Notify the recipient of the new message
   await notify({
     userId:  recipientId,
     type:    'NEW_MESSAGE',
@@ -127,7 +130,7 @@ exports.sendMessage = catchAsync(async (req, res) => {
   res.status(201).json({ message: msg });
 });
 
-/** PATCH /api/messages/:id/read — mark a received message as read */
+/** PATCH /api/messages/:id/read */
 exports.markRead = catchAsync(async (req, res) => {
   const msg = await prisma.message.findUnique({ where: { id: req.params.id } });
   if (!msg)                         return res.status(404).json({ error: 'Message not found' });

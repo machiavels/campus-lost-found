@@ -1,20 +1,29 @@
 const prisma = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
+const { parsePagination, buildMeta } = require('../utils/pagination');
 
 // ── Items ─────────────────────────────────────────────────────────────────────
 
-exports.listPendingItems = catchAsync(async (_req, res) => {
-  const items = await prisma.item.findMany({
-    where:   { status: 'PENDING' },
-    include: { reporter: { select: { id: true, username: true, email: true } }, category: true, location: true, photos: true },
-    orderBy: { createdAt: 'asc' },
-  });
-  res.json({ items });
+exports.listPendingItems = catchAsync(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query);
+
+  const where = { status: 'PENDING' };
+  const [total, items] = await Promise.all([
+    prisma.item.count({ where }),
+    prisma.item.findMany({
+      where,
+      include: { reporter: { select: { id: true, username: true, email: true } }, category: true, location: true, photos: true },
+      orderBy: { createdAt: 'asc' },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  res.json({ items, meta: buildMeta(total, page, limit) });
 });
 
 /**
  * PATCH /api/admin/items/:id/moderate
- * Body: { status: 'VERIFIED' | 'REJECTED', moderationNote?: string }
  */
 exports.moderateItem = catchAsync(async (req, res) => {
   const { status, moderationNote } = req.body;
@@ -73,28 +82,34 @@ exports.rejectItem = catchAsync(async (req, res) => {
 
 /**
  * GET /api/admin/users
- * List all users with basic info.
  */
-exports.listUsers = catchAsync(async (_req, res) => {
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      role: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-      _count: { select: { items: true, claimRequests: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
-  res.json({ users });
+exports.listUsers = catchAsync(async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query);
+
+  const [total, users] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { items: true, claimRequests: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: limit,
+    }),
+  ]);
+
+  res.json({ users, meta: buildMeta(total, page, limit) });
 });
 
 /**
  * GET /api/admin/users/:id
- * Full user detail including complete item history for audit.
  */
 exports.getUserDetail = catchAsync(async (req, res) => {
   const user = await prisma.user.findUnique({
@@ -131,8 +146,6 @@ exports.getUserDetail = catchAsync(async (req, res) => {
 
 /**
  * PUT /api/admin/users/:id
- * Update a user's username and/or email.
- * Body: { username?: string, email?: string }
  */
 exports.updateUser = catchAsync(async (req, res) => {
   const { username, email } = req.body;
@@ -144,7 +157,6 @@ exports.updateUser = catchAsync(async (req, res) => {
   const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  // Check uniqueness constraints
   if (username && username !== existing.username) {
     const taken = await prisma.user.findFirst({ where: { username, NOT: { id: req.params.id } } });
     if (taken) return res.status(409).json({ error: 'Username already taken' });
@@ -169,8 +181,6 @@ exports.updateUser = catchAsync(async (req, res) => {
 
 /**
  * PATCH /api/admin/users/:id/status
- * Explicitly activate or deactivate a user account.
- * Body: { status: 'ACTIVE' | 'INACTIVE' }
  */
 exports.setUserStatus = catchAsync(async (req, res) => {
   const { status } = req.body;
@@ -182,7 +192,6 @@ exports.setUserStatus = catchAsync(async (req, res) => {
   const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'User not found' });
 
-  // Prevent admin from deactivating their own account
   if (req.user.id === req.params.id && status === 'INACTIVE') {
     return res.status(403).json({ error: 'You cannot deactivate your own account' });
   }
@@ -197,8 +206,7 @@ exports.setUserStatus = catchAsync(async (req, res) => {
 });
 
 /**
- * PATCH /api/admin/users/:id/toggle  (kept for backward compatibility)
- * Toggles ACTIVE <-> INACTIVE.
+ * PATCH /api/admin/users/:id/toggle
  */
 exports.toggleUserStatus = catchAsync(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
@@ -218,7 +226,6 @@ exports.toggleUserStatus = catchAsync(async (req, res) => {
 
 /**
  * PATCH /api/admin/users/:id/role
- * Body: { role: 'STUDENT' | 'STAFF' | 'ADMIN' }
  */
 exports.changeUserRole = catchAsync(async (req, res) => {
   const { role } = req.body;
@@ -238,19 +245,11 @@ exports.changeUserRole = catchAsync(async (req, res) => {
 
 // ── Categories ────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/categories          — public (via reference.routes.js)
- * GET /api/admin/categories    — admin alias
- */
 exports.listCategories = catchAsync(async (_req, res) => {
   const categories = await prisma.category.findMany({ orderBy: { name: 'asc' } });
   res.json({ categories });
 });
 
-/**
- * POST /api/admin/categories
- * Body: { name: string, description?: string }
- */
 exports.createCategory = catchAsync(async (req, res) => {
   const { name, description } = req.body;
   if (!name || !name.trim()) {
@@ -260,10 +259,6 @@ exports.createCategory = catchAsync(async (req, res) => {
   res.status(201).json({ category: cat });
 });
 
-/**
- * PUT /api/admin/categories/:id
- * Body: { name?: string, description?: string }
- */
 exports.updateCategory = catchAsync(async (req, res) => {
   const { name, description } = req.body;
   if (name !== undefined && !name.trim()) {
@@ -278,9 +273,6 @@ exports.updateCategory = catchAsync(async (req, res) => {
   res.json({ category: cat });
 });
 
-/**
- * DELETE /api/admin/categories/:id
- */
 exports.deleteCategory = catchAsync(async (req, res) => {
   const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Category not found' });
@@ -290,19 +282,11 @@ exports.deleteCategory = catchAsync(async (req, res) => {
 
 // ── Locations ─────────────────────────────────────────────────────────────────
 
-/**
- * GET /api/locations           — public (via reference.routes.js)
- * GET /api/admin/locations     — admin alias
- */
 exports.listLocations = catchAsync(async (_req, res) => {
   const locations = await prisma.location.findMany({ orderBy: { name: 'asc' } });
   res.json({ locations });
 });
 
-/**
- * POST /api/admin/locations
- * Body: { name: string, description?: string }
- */
 exports.createLocation = catchAsync(async (req, res) => {
   const { name, description } = req.body;
   if (!name || !name.trim()) {
@@ -312,10 +296,6 @@ exports.createLocation = catchAsync(async (req, res) => {
   res.status(201).json({ location: loc });
 });
 
-/**
- * PUT /api/admin/locations/:id
- * Body: { name?: string, description?: string }
- */
 exports.updateLocation = catchAsync(async (req, res) => {
   const { name, description } = req.body;
   if (name !== undefined && !name.trim()) {
@@ -330,9 +310,6 @@ exports.updateLocation = catchAsync(async (req, res) => {
   res.json({ location: loc });
 });
 
-/**
- * DELETE /api/admin/locations/:id
- */
 exports.deleteLocation = catchAsync(async (req, res) => {
   const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
   if (!existing) return res.status(404).json({ error: 'Location not found' });
