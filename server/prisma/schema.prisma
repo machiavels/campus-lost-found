@@ -11,7 +11,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
+// ─── Enums ──────────────────────────────────────────────────────────────────────
 
 enum Role {
   STUDENT
@@ -50,7 +50,7 @@ enum NotificationType {
   CLAIM_REJECTED
 }
 
-// ─── User ─────────────────────────────────────────────────────────────────────
+// ─── User ────────────────────────────────────────────────────────────────────────────
 
 model User {
   id            String      @id @default(uuid())
@@ -59,6 +59,8 @@ model User {
   passwordHash  String
   role          Role        @default(STUDENT)
   status        UserStatus  @default(ACTIVE)
+  avatar        String?                          // issue #26 — optional profile avatar URL
+  bio           String?                          // issue #26 — optional short bio
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -75,7 +77,7 @@ model User {
   @@map("users")
 }
 
-// ─── Location ─────────────────────────────────────────────────────────────────
+// ─── Location ─────────────────────────────────────────────────────────────────────
 
 model Location {
   id          String   @id @default(uuid())
@@ -89,7 +91,7 @@ model Location {
   @@map("locations")
 }
 
-// ─── Category ─────────────────────────────────────────────────────────────────
+// ─── Category ────────────────────────────────────────────────────────────────────
 
 model Category {
   id          String   @id @default(uuid())
@@ -103,7 +105,7 @@ model Category {
   @@map("categories")
 }
 
-// ─── Item ─────────────────────────────────────────────────────────────────────
+// ─── Item ─────────────────────────────────────────────────────────────────────────────
 
 model Item {
   id               String     @id @default(uuid())
@@ -143,7 +145,7 @@ model Item {
   @@map("items")
 }
 
-// ─── Photo ────────────────────────────────────────────────────────────────────
+// ─── Photo ────────────────────────────────────────────────────────────────────────────
 
 model Photo {
   id        String   @id @default(uuid())
@@ -157,7 +159,7 @@ model Photo {
   @@map("photos")
 }
 
-// ─── Message ──────────────────────────────────────────────────────────────────
+// ─── Message ────────────────────────────────────────────────────────────────────────
 
 model Message {
   id          String   @id @default(uuid())
@@ -175,7 +177,7 @@ model Message {
   @@map("messages")
 }
 
-// ─── ClaimRequest ─────────────────────────────────────────────────────────────
+// ─── ClaimRequest ───────────────────────────────────────────────────────────────────
 
 model ClaimRequest {
   id             String      @id @default(uuid())
@@ -192,7 +194,7 @@ model ClaimRequest {
   @@map("claim_requests")
 }
 
-// ─── Notification ─────────────────────────────────────────────────────────────
+// ─── Notification ───────────────────────────────────────────────────────────────────
 
 model Notification {
   id        String           @id @default(uuid())
@@ -209,7 +211,7 @@ model Notification {
   @@map("notifications")
 }
 
-// ─── RefreshToken — issue #23 ─────────────────────────────────────────────────
+// ─── RefreshToken — issue #23 ──────────────────────────────────────────────────────────
 
 model RefreshToken {
   id        String   @id @default(uuid())
