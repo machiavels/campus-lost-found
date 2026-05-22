@@ -85,7 +85,7 @@ exports.listUsers = catchAsync(async (_req, res) => {
       status: true,
       createdAt: true,
       updatedAt: true,
-      _count: { select: { items: true, claims: true } },
+      _count: { select: { items: true, claimRequests: true } },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -115,7 +115,7 @@ exports.getUserDetail = catchAsync(async (req, res) => {
           photos:   { select: { id: true, url: true } },
         },
       },
-      claims: {
+      claimRequests: {
         orderBy: { createdAt: 'desc' },
         include: {
           item: { select: { id: true, name: true, status: true } },
