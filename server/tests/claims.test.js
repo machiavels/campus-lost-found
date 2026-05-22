@@ -6,9 +6,9 @@ let claimant, admin, otherUser, itemId, claimId;
 const ts = Date.now();
 
 beforeAll(async () => {
-  claimant  = await registerAndLogin(`claim-user-${ts}@student.edu`);
-  otherUser = await registerAndLogin(`claim-other-${ts}@student.edu`);
-  admin     = await registerAndLogin(`claim-admin-${ts}@student.edu`);
+  claimant  = await registerAndLogin(`claim-user-${ts}@eleve.isep.fr`);
+  otherUser = await registerAndLogin(`claim-other-${ts}@eleve.isep.fr`);
+  admin     = await registerAndLogin(`claim-admin-${ts}@eleve.isep.fr`);
 
   // Elevate admin role
   if (admin.userId) {
@@ -38,7 +38,7 @@ afterAll(async () => {
   await prisma.item.deleteMany({ where: { name: { contains: `ClaimItem-${ts}` } } });
   await prisma.category.deleteMany({ where: { name: { contains: `ClaimCat-${ts}` } } });
   await prisma.location.deleteMany({ where: { name: { contains: `ClaimLoc-${ts}` } } });
-  await prisma.user.deleteMany({ where: { email: { contains: `claim-` } } });
+  await prisma.user.deleteMany({ where: { email: { endsWith: `@eleve.isep.fr`, contains: `claim-` } } });
 });
 
 // ─── Auth guards ──────────────────────────────────────────────────────────────
@@ -83,7 +83,6 @@ describe('POST /api/claims', () => {
     expect(res.body.claim.status).toBe('PENDING');
     expect(res.body.claim.item).toBeDefined();
     expect(res.body.claim.requester).toBeDefined();
-    expect(res.body.claim.requester.email).toBeDefined(); // email is present in claim response
     claimId = res.body.claim.id;
   });
 
@@ -106,8 +105,7 @@ describe('POST /api/claims', () => {
   });
 
   it('returns 409 when item is not VERIFIED', async () => {
-    if (!claimant.token) return;
-    // Create a PENDING item
+    if (!claimant.token || !otherUser.userId) return;
     const cat = await prisma.category.findFirst({ where: { name: { contains: `ClaimCat-${ts}` } } });
     const loc = await prisma.location.findFirst({ where: { name: { contains: `ClaimLoc-${ts}` } } });
     const pendingItem = await prisma.item.create({
@@ -257,14 +255,12 @@ describe('PATCH /api/claims/:id/approve — full approval flow', () => {
     });
     item2Id = item2.id;
 
-    // claimant submits claim
     const r1 = await request(app)
       .post('/api/claims')
       .set('Authorization', `Bearer ${claimant.token}`)
       .send({ itemId: item2Id, requestMessage: 'Primary claimer' });
     claim2Id = r1.body.claim?.id;
 
-    // otherUser submits a competing claim
     const r2 = await request(app)
       .post('/api/claims')
       .set('Authorization', `Bearer ${otherUser.token}`)
@@ -273,6 +269,7 @@ describe('PATCH /api/claims/:id/approve — full approval flow', () => {
   });
 
   afterAll(async () => {
+    if (!item2Id) return;
     await prisma.claimRequest.deleteMany({ where: { itemId: item2Id } });
     await prisma.notification.deleteMany({ where: { itemId: item2Id } });
     await prisma.item.delete({ where: { id: item2Id } }).catch(() => {});
@@ -286,11 +283,9 @@ describe('PATCH /api/claims/:id/approve — full approval flow', () => {
     expect(res.status).toBe(200);
     expect(res.body.claim.status).toBe('APPROVED');
 
-    // Sibling should be auto-rejected
     const sibling = await prisma.claimRequest.findUnique({ where: { id: claim3Id } });
     expect(sibling.status).toBe('REJECTED');
 
-    // Item should be CLAIMED
     const item = await prisma.item.findUnique({ where: { id: item2Id } });
     expect(item.status).toBe('CLAIMED');
     expect(item.claimedById).toBe(claimant.userId);

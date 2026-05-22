@@ -6,8 +6,8 @@ let userA, userB, itemId, msgId;
 const ts = Date.now();
 
 beforeAll(async () => {
-  userA = await registerAndLogin(`msg-a-${ts}@student.edu`);
-  userB = await registerAndLogin(`msg-b-${ts}@student.edu`);
+  userA = await registerAndLogin(`msg-a-${ts}@eleve.isep.fr`);
+  userB = await registerAndLogin(`msg-b-${ts}@eleve.isep.fr`);
 
   // Create a category, location and item owned by userB
   const cat = await prisma.category.create({ data: { name: `MsgCat-${ts}` } });
@@ -31,7 +31,7 @@ afterAll(async () => {
   await prisma.item.deleteMany({ where: { name: { contains: `MsgItem-${ts}` } } });
   await prisma.category.deleteMany({ where: { name: { contains: `MsgCat-${ts}` } } });
   await prisma.location.deleteMany({ where: { name: { contains: `MsgLoc-${ts}` } } });
-  await prisma.user.deleteMany({ where: { email: { contains: `msg-` } } });
+  await prisma.user.deleteMany({ where: { email: { endsWith: `@eleve.isep.fr`, contains: `msg-` } } });
 });
 
 // ─── Auth guards ──────────────────────────────────────────────────────────────
@@ -154,7 +154,6 @@ describe('GET /api/messages/conversations', () => {
     const res = await request(app)
       .get('/api/messages/conversations')
       .set('Authorization', `Bearer ${userA.token}`);
-    // Keys should be unique (itemId|partnerId)
     const keys = res.body.conversations.map(c => `${c.item.id}|${c.sender.id === userA.userId ? c.recipient.id : c.sender.id}`);
     const unique = new Set(keys);
     expect(keys.length).toBe(unique.size);
