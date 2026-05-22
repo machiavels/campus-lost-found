@@ -16,10 +16,13 @@ const ME_SELECT = {
 };
 
 // Fields returned for a public user profile (no email, no sensitive data)
+// status is fetched internally to gate INACTIVE accounts, but is NOT included
+// in the response payload (stripped before res.json).
 const PUBLIC_SELECT = {
   id: true,
   username: true,
   role: true,
+  status: true,   // needed to block INACTIVE users — stripped from response below
   avatar: true,
   bio: true,
   createdAt: true,
@@ -136,7 +139,7 @@ exports.deleteMe = catchAsync(async (req, res) => {
 
 /**
  * GET /api/users/:id
- * Public profile of any user — no email, no passwordHash.
+ * Public profile of any user — no email, no passwordHash, no status.
  */
 exports.getPublicProfile = catchAsync(async (req, res) => {
   const user = await prisma.user.findUnique({
@@ -147,7 +150,9 @@ exports.getPublicProfile = catchAsync(async (req, res) => {
   if (!user) return res.status(404).json({ error: 'Utilisateur introuvable' });
   if (user.status === 'INACTIVE') return res.status(404).json({ error: 'Utilisateur introuvable' });
 
-  res.json({ user });
+  // Strip status from the public response — it's an internal field
+  const { status: _status, ...publicUser } = user;
+  res.json({ user: publicUser });
 });
 
 // Keep backward-compat aliases used by old routes (profile → me)
