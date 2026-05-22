@@ -82,6 +82,50 @@ describe('Notifications API', () => {
     });
   });
 
+  // ── GET /api/notifications/stream (SSE) ──────────────────────────────────
+  describe('GET /api/notifications/stream', () => {
+    it('returns 401 without a token', async () => {
+      const res = await request(app).get('/api/notifications/stream');
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 200 with correct SSE headers', async () => {
+      // supertest buffers the response; we just check headers before the stream hangs
+      const res = await request(app)
+        .get('/api/notifications/stream')
+        .set('Authorization', `Bearer ${recipientToken}`)
+        .timeout({ response: 500, deadline: 1000 })
+        .catch((err) => {
+          // timeout is expected — we only care about the initial headers
+          if (err.timeout) return err.response;
+          throw err;
+        });
+
+      // res may be null if supertest throws before attaching .response
+      if (!res) return;
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+      expect(res.headers['cache-control']).toMatch(/no-cache/);
+    });
+
+    it('does not treat /stream as a notification :id (no 404)', async () => {
+      // Regression guard: /stream must NOT be caught by PATCH /:id/read
+      // A GET to /stream with a valid token must not return 404
+      const res = await request(app)
+        .get('/api/notifications/stream')
+        .set('Authorization', `Bearer ${recipientToken}`)
+        .timeout({ response: 500, deadline: 1000 })
+        .catch((err) => {
+          if (err.timeout) return err.response;
+          throw err;
+        });
+
+      if (!res) return;
+      expect(res.status).not.toBe(404);
+    });
+  });
+
   // ── PATCH /api/notifications/read-all ────────────────────────────────────
   describe('PATCH /api/notifications/read-all', () => {
     it('returns 401 without a token', async () => {

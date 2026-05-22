@@ -1,6 +1,7 @@
-const prisma = require('../config/prisma');
+const prisma      = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
 const { parsePagination, buildMeta } = require('../utils/pagination');
+const sseManager  = require('../utils/sseManager');
 
 const NOTIF_SELECT = {
   id: true,
@@ -34,6 +35,46 @@ exports.getNotifications = catchAsync(async (req, res) => {
 
   res.json({ notifications, unreadCount, meta: buildMeta(total, page, limit) });
 });
+
+/**
+ * GET /api/notifications/stream
+ * Opens an SSE stream for the authenticated user.
+ * Events pushed:
+ *   - event: connected  → initial handshake
+ *   - event: notification → new notification payload
+ *   - event: heartbeat  → keep-alive every 30 s
+ */
+exports.streamNotifications = (req, res) => {
+  // SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
+  res.flushHeaders();
+
+  const userId = req.user.id;
+
+  // Register this connection
+  sseManager.addClient(userId, res);
+
+  // Initial handshake event
+  res.write(`event: connected\ndata: ${JSON.stringify({ userId })}\n\n`);
+
+  // Heartbeat every 30 s to keep the connection alive through proxies
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`event: heartbeat\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+    } catch {
+      clearInterval(heartbeat);
+    }
+  }, 30_000);
+
+  // Cleanup on client disconnect
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseManager.removeClient(userId, res);
+  });
+};
 
 /**
  * PATCH /api/notifications/read-all
