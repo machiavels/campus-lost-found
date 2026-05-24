@@ -1,14 +1,14 @@
-const express = require('express');
-const router  = express.Router();
-const { authenticate } = require('../middleware/auth.middleware');
-const upload = require('../middleware/upload.middleware');
-const { uploadPhoto, deletePhoto } = require('../controllers/photo.controller');
+const router   = require('express').Router();
+const ctrl     = require('../controllers/photo.controller');
+const { authenticate }  = require('../middleware/auth.middleware');
+const upload            = require('../middleware/upload.middleware');
+const { validateMime }  = require('../middleware/mimeValidator.middleware');
 
 /**
  * @openapi
  * tags:
- *   name: Photos
- *   description: Photos associées aux annonces
+ *   - name: Photos
+ *     description: Item photo upload and deletion
  */
 
 /**
@@ -16,18 +16,15 @@ const { uploadPhoto, deletePhoto } = require('../controllers/photo.controller');
  * /items/{id}/photos:
  *   post:
  *     tags: [Photos]
- *     summary: Uploader une photo
- *     description: Téléverse une image pour une annonce. Le type MIME réel est vérifié (JPEG, PNG, WebP uniquement).
+ *     summary: Upload photos for an item (max 5)
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         description: ID de l'annonce
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
+ *         description: Item ID
  *     requestBody:
  *       required: true
  *       content:
@@ -35,59 +32,71 @@ const { uploadPhoto, deletePhoto } = require('../controllers/photo.controller');
  *           schema:
  *             type: object
  *             properties:
- *               photo:
- *                 type: string
- *                 format: binary
+ *               photos:
+ *                 type: array
+ *                 items: { type: string, format: binary }
+ *                 description: JPEG, PNG or WebP files (max 5)
  *     responses:
  *       201:
- *         description: Photo uploadée
+ *         description: Photos uploaded
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 photo:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: string
- *                     url:
- *                       type: string
- *                       example: /uploads/uuid.jpg
+ *                 photos:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:  { type: string, format: uuid }
+ *                       url: { type: string, example: '/uploads/photo-uuid.jpg' }
  *       400:
- *         description: Fichier invalide ou type MIME rejeté
+ *         description: Invalid MIME type or too many files
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       401:
- *         description: Non authentifié
- *       404:
- *         description: Annonce introuvable
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.post('/items/:id/photos', authenticate, upload.single('photo'), uploadPhoto);
+router.post(
+  '/items/:id/photos',
+  authenticate,
+  upload.array('photos', 5),
+  validateMime,
+  ctrl.uploadPhotos
+);
 
 /**
  * @openapi
  * /photos/{id}:
  *   delete:
  *     tags: [Photos]
- *     summary: Supprimer une photo
+ *     summary: Delete a specific photo
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       204:
- *         description: Photo supprimée
- *       401:
- *         description: Non authentifié
+ *         description: Photo deleted
  *       403:
- *         description: Non autorisé
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       404:
- *         description: Photo introuvable
+ *         description: Photo not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.delete('/photos/:id', authenticate, deletePhoto);
+router.delete('/photos/:id', authenticate, ctrl.deletePhoto);
 
 module.exports = router;
