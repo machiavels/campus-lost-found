@@ -1,20 +1,15 @@
-const express = require('express');
-const router  = express.Router();
-const { authenticate, optionalAuth } = require('../middleware/auth.middleware');
-const {
-  getItems,
-  getItemById,
-  createItem,
-  updateItem,
-  deleteItem,
-  closeItem,
-} = require('../controllers/item.controller');
+const router   = require('express').Router();
+const ctrl     = require('../controllers/item.controller');
+const { authenticate, optionalAuthenticate } = require('../middleware/auth.middleware');
+const upload   = require('../middleware/upload.middleware');
+const validate = require('../middleware/validate.middleware');
+const { createItemSchema, updateItemSchema } = require('../middleware/validators/item.validator');
 
 /**
  * @openapi
  * tags:
- *   name: Items
- *   description: Annonces d'objets perdus et trouvés
+ *   - name: Items
+ *     description: Lost & found items — create, list, update, delete
  */
 
 /**
@@ -22,147 +17,127 @@ const {
  * /items:
  *   get:
  *     tags: [Items]
- *     summary: Liste des annonces
- *     description: Retourne une liste paginée d'annonces avec filtres optionnels.
+ *     summary: List active items (public, auth optional)
  *     parameters:
  *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *           enum: [LOST, FOUND]
- *         description: Filtrer par type
- *       - in: query
- *         name: categoryId
- *         schema:
- *           type: integer
- *         description: Filtrer par catégorie
- *       - in: query
- *         name: locationId
- *         schema:
- *           type: integer
- *         description: Filtrer par lieu
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [ACTIVE, RESOLVED, PENDING]
- *       - in: query
- *         name: q
- *         schema:
- *           type: string
- *         description: Recherche par mot-clé
- *       - in: query
  *         name: page
- *         schema:
- *           type: integer
- *           default: 1
+ *         schema: { type: integer, default: 1 }
  *       - in: query
  *         name: limit
- *         schema:
- *           type: integer
- *           default: 20
- *           maximum: 100
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: type
+ *         schema: { type: string, enum: [LOST, FOUND] }
+ *       - in: query
+ *         name: status
+ *         schema: { type: string, enum: [PENDING, ACTIVE, CLAIMED, REJECTED] }
  *     responses:
  *       200:
- *         description: Liste paginée
+ *         description: Paginated list of items
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 data:
+ *                 items:
  *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Item'
- *                 meta:
- *                   $ref: '#/components/schemas/PaginationMeta'
- *   post:
- *     tags: [Items]
- *     summary: Créer une annonce
- *     security:
- *       - BearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [title, type, categoryId, locationId, date]
- *             properties:
- *               title:
- *                 type: string
- *                 example: Sac à dos bleu
- *               description:
- *                 type: string
- *                 example: Trouvé près de la bibliothèque
- *               type:
- *                 type: string
- *                 enum: [LOST, FOUND]
- *               categoryId:
- *                 type: integer
- *                 example: 1
- *               locationId:
- *                 type: integer
- *                 example: 3
- *               date:
- *                 type: string
- *                 format: date
- *                 example: "2026-05-20"
- *     responses:
- *       201:
- *         description: Annonce créée
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 item:
- *                   $ref: '#/components/schemas/Item'
- *       400:
- *         description: Données invalides
- *       401:
- *         description: Non authentifié
+ *                   items: { $ref: '#/components/schemas/Item' }
+ *                 meta: { $ref: '#/components/schemas/PaginationMeta' }
  */
-router.get('/',    optionalAuth, getItems);
-router.post('/',   authenticate, createItem);
+router.get('/',    optionalAuthenticate, ctrl.listItems);
 
 /**
  * @openapi
  * /items/{id}:
  *   get:
  *     tags: [Items]
- *     summary: Détail d'une annonce
+ *     summary: Get a single item by ID
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: Annonce trouvée
+ *         description: Item object
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 item:
- *                   $ref: '#/components/schemas/Item'
+ *                 item: { $ref: '#/components/schemas/Item' }
  *       404:
- *         description: Annonce introuvable
+ *         description: Item not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+router.get('/:id', optionalAuthenticate, ctrl.getItem);
+
+/**
+ * @openapi
+ * /items:
+ *   post:
+ *     tags: [Items]
+ *     summary: Create a new lost/found item
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [title, type]
+ *             properties:
+ *               title:       { type: string, example: 'Blue backpack' }
+ *               description: { type: string, example: 'Found near the library' }
+ *               type:        { type: string, enum: [LOST, FOUND] }
+ *               categoryId:  { type: integer, example: 1 }
+ *               locationId:  { type: integer, example: 3 }
+ *               photos:
+ *                 type: array
+ *                 items: { type: string, format: binary }
+ *     responses:
+ *       201:
+ *         description: Item created
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 item: { $ref: '#/components/schemas/Item' }
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+router.post('/',
+  authenticate,
+  upload.array('photos', 5),
+  validate(createItemSchema),
+  ctrl.createItem
+);
+
+/**
+ * @openapi
+ * /items/{id}:
  *   put:
  *     tags: [Items]
- *     summary: Modifier une annonce
+ *     summary: Update an item (owner or admin)
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     requestBody:
  *       required: true
  *       content:
@@ -170,74 +145,97 @@ router.post('/',   authenticate, createItem);
  *           schema:
  *             type: object
  *             properties:
- *               title:
- *                 type: string
- *               description:
- *                 type: string
- *               categoryId:
- *                 type: integer
- *               locationId:
- *                 type: integer
+ *               title:       { type: string }
+ *               description: { type: string }
+ *               categoryId:  { type: integer }
+ *               locationId:  { type: integer }
  *     responses:
  *       200:
- *         description: Annonce mise à jour
- *       401:
- *         description: Non authentifié
+ *         description: Updated item
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 item: { $ref: '#/components/schemas/Item' }
  *       403:
- *         description: Non autorisé
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       404:
- *         description: Annonce introuvable
+ *         description: Item not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+router.put('/:id',
+  authenticate,
+  validate(updateItemSchema),
+  ctrl.updateItem
+);
+
+/**
+ * @openapi
+ * /items/{id}:
  *   delete:
  *     tags: [Items]
- *     summary: Supprimer une annonce
+ *     summary: Delete an item (owner or admin)
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       204:
- *         description: Annonce supprimée
- *       401:
- *         description: Non authentifié
+ *         description: Item deleted
  *       403:
- *         description: Non autorisé
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       404:
- *         description: Annonce introuvable
+ *         description: Item not found
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.get('/:id',    optionalAuth, getItemById);
-router.put('/:id',    authenticate, updateItem);
-router.delete('/:id', authenticate, deleteItem);
+router.delete('/:id',      authenticate, ctrl.deleteItem);
 
 /**
  * @openapi
  * /items/{id}/close:
  *   patch:
  *     tags: [Items]
- *     summary: Marquer l'annonce comme résolue
+ *     summary: Close an item (mark as CLAIMED by owner)
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: Annonce fermée
- *       401:
- *         description: Non authentifié
+ *         description: Item closed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 item: { $ref: '#/components/schemas/Item' }
  *       403:
- *         description: Non autorisé
- *       404:
- *         description: Annonce introuvable
+ *         description: Forbidden
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.patch('/:id/close', authenticate, closeItem);
+router.patch('/:id/close', authenticate, ctrl.closeItem);
+
+// Photos sub-routes
+const photoRoutes = require('./photo.routes');
+router.use('/', photoRoutes);
 
 module.exports = router;
