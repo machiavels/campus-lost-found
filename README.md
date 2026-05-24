@@ -10,9 +10,12 @@ Ce projet constitue une application web complète (*full-stack*) destinée à la
 |---|---|
 | Serveur (*backend*) | Node.js + Express |
 | Base de données | PostgreSQL (ORM Prisma) |
-| Authentification | JWT + messagerie institutionnelle |
+| Authentification | JWT (access 15 min + refresh token 7 jours) |
 | Interface (*frontend*) | HTML / CSS / JavaScript (natif, sans framework) |
 | Stockage des fichiers | Système de fichiers local / compatible S3 |
+| Documentation API | Swagger UI / OpenAPI 3.0 (`swagger-jsdoc`) |
+| Sécurité HTTP | Helmet.js (CSP, HSTS, X-Frame-Options) |
+| Rate limiting | `express-rate-limit` |
 
 ---
 
@@ -23,7 +26,7 @@ campus-lost-found/
 ├── server/
 │   ├── src/
 │   │   ├── config/         # Configuration base de données, variables d'environnement, Multer
-│   │   ├── middleware/     # Authentification, gestion des erreurs, téléversement
+│   │   ├── middleware/     # Auth, erreurs (RFC 7807), upload, rate limiting
 │   │   ├── models/         # Schéma Prisma (voir prisma/)
 │   │   ├── routes/         # Routeurs Express
 │   │   ├── controllers/    # Logique métier par ressource
@@ -31,6 +34,7 @@ campus-lost-found/
 │   │   └── app.js          # Point d'entrée de l'application Express
 │   ├── prisma/
 │   │   └── schema.prisma   # Schéma ER complet (7 entités)
+│   ├── tests/              # Tests d'intégration Jest
 │   └── package.json
 ├── client/
 │   ├── public/
@@ -40,7 +44,8 @@ campus-lost-found/
 │   └── pages/
 └── docs/
     ├── cahier-des-charges.md
-    └── features.md
+    ├── features.md
+    └── openapi.json        # Spécification OpenAPI 3.0 exportée
 ```
 
 ---
@@ -53,7 +58,8 @@ cd server && npm install
 
 # 2. Copie du fichier de configuration
 cp .env.example .env
-# Renseigner DATABASE_URL et JWT_SECRET
+# Renseigner DATABASE_URL, JWT_SECRET, REFRESH_TOKEN_SECRET
+# et ALLOWED_EMAIL_DOMAINS (ex: eleve.isep.fr,isep.fr)
 
 # 3. Exécution des migrations de base de données
 npx prisma migrate dev --name init
@@ -61,6 +67,16 @@ npx prisma migrate dev --name init
 # 4. Démarrage du serveur en mode développement
 npm run dev
 ```
+
+### Variables d'environnement
+
+| Variable | Exemple | Description |
+|---|---|---|
+| `DATABASE_URL` | `postgresql://...` | URL de connexion PostgreSQL |
+| `JWT_SECRET` | `<secret>` | Clé de signature des access tokens |
+| `REFRESH_TOKEN_SECRET` | `<secret>` | Clé de signature des refresh tokens |
+| `ALLOWED_EMAIL_DOMAINS` | `eleve.isep.fr,isep.fr` | Domaines institutionnels autorisés à l'inscription |
+| `NODE_ENV` | `development` | Désactive Swagger UI en `production` |
 
 ---
 
@@ -76,18 +92,46 @@ Le détail complet du schéma est disponible dans `server/prisma/schema.prisma`.
 
 **Implémentées**
 
-- Authentification institutionnelle (JWT, messagerie campus)
+- Authentification institutionnelle (JWT access token 15 min + refresh token 7 jours, cookie `HttpOnly`)
+- Validation du domaine email institutionnel à l'inscription (`ALLOWED_EMAIL_DOMAINS`)
 - Déclaration d'objets perdus et trouvés (opérations CRUD complètes)
-- Téléversement de photographies par annonce
+- Téléversement de photographies avec vérification des magic bytes MIME réels (rejet des fichiers déguisés)
 - Recherche et filtrage avancés (mots-clés, catégorie, lieu, date, statut)
+- Pagination standardisée sur toutes les routes de liste (`page`, `limit`, réponse `meta`)
 - Messagerie interne sécurisée entre utilisateurs
+- Notifications in-app + **notifications en temps réel via Server-Sent Events** (`GET /api/notifications/stream`)
+- Gestion du profil utilisateur (`GET/PUT /api/users/me`, changement de mot de passe, suppression RGPD)
 - Interface de modération administrative
 - Processus de demande de réclamation
+- Headers de sécurité HTTP (Helmet.js : CSP strict, HSTS 1 an + preload, X-Frame-Options DENY)
+- Rate limiting : 200 req/15 min global, 20 req/15 min sur les routes d'authentification
+- Format d'erreur normalisé **RFC 7807** (`application/problem+json`)
+- Endpoint de health check (`GET /api/health`)
+- Documentation interactive Swagger UI (`GET /api/docs`, désactivée en production)
 
 **Prévues (versions ultérieures)**
 
 - Suggestion automatique de correspondances (intelligence artificielle / apprentissage automatique)
-- Système de notifications en temps réel
+
+---
+
+## Tests
+
+```bash
+cd server && npm test
+```
+
+Les tests d'intégration Jest couvrent :
+
+| Fichier | Périmètre |
+|---|---|
+| `tests/auth.test.js` | Register, login, refresh, logout, validation domaine |
+| `tests/items.test.js` | CRUD annonces, upload photos, filtres, pagination |
+| `tests/messages.test.js` | Envoi, conversations, fil de discussion, guards |
+| `tests/claims.test.js` | Soumission, approbation/rejet, notifications |
+| `tests/admin.test.js` | Modération, gestion users, catégories, lieux |
+| `tests/security.test.js` | Headers Helmet, rate limiting, MIME validation |
+| `tests/rfc7807.test.js` | Format d'erreur normalisé RFC 7807 |
 
 ---
 
@@ -95,10 +139,20 @@ Le détail complet du schéma est disponible dans `server/prisma/schema.prisma`.
 
 Base URL : `http://localhost:3000/api`
 
+> 💡 **Documentation interactive :** `GET /api/docs` (Swagger UI, disponible uniquement en `NODE_ENV=development`)
+
 Toutes les routes protégées nécessitent un header :
 ```
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <access_token>
 ```
+
+---
+
+### Health Check
+
+| Méthode | Endpoint | Auth | Description |
+|---------|----------|------|-------------|
+| `GET` | `/health` | ❌ | Retourne `{ status: 'ok', timestamp }` |
 
 ---
 
@@ -106,34 +160,56 @@ Authorization: Bearer <jwt_token>
 
 | Méthode | Endpoint | Auth | Description |
 |---------|----------|------|-------------|
-| `POST` | `/auth/register` | ❌ | Inscription — crée un compte utilisateur |
-| `POST` | `/auth/login` | ❌ | Connexion — retourne un JWT |
+| `POST` | `/auth/register` | ❌ | Inscription — domaine institutionnel requis |
+| `POST` | `/auth/login` | ❌ | Connexion — retourne access token + refresh token (cookie) |
+| `POST` | `/auth/refresh` | ❌ | Renouvelle l'access token via le refresh token (cookie) |
+| `POST` | `/auth/logout` | ✅ | Invalide le refresh token |
 | `GET` | `/auth/me` | ✅ | Retourne le profil de l'utilisateur connecté |
 
 **POST `/auth/register`**
 ```json
 // Corps de la requête
 {
-  "email": "prenom.nom@isep.fr",
+  "email": "prenom.nom@eleve.isep.fr",
   "password": "motdepasse123",
   "username": "prenom.nom"
 }
 
 // Réponse 201
 {
-  "user": { "id": 1, "email": "prenom.nom@isep.fr", "username": "prenom.nom" },
-  "token": "<jwt_token>"
+  "user": { "id": 1, "email": "prenom.nom@eleve.isep.fr", "username": "prenom.nom" },
+  "token": "<access_token>"
 }
 ```
 
 **POST `/auth/login`**
 ```json
 // Corps de la requête
-{ "email": "prenom.nom@isep.fr", "password": "motdepasse123" }
+{ "email": "prenom.nom@eleve.isep.fr", "password": "motdepasse123" }
+
+// Réponse 200 (le refresh token est envoyé en cookie HttpOnly)
+{ "token": "<access_token>", "user": { "id": 1, "email": "...", "role": "USER" } }
+```
+
+**POST `/auth/refresh`**
+```json
+// Le refresh token est lu depuis le cookie HttpOnly
 
 // Réponse 200
-{ "token": "<jwt_token>", "user": { "id": 1, "email": "...", "role": "USER" } }
+{ "token": "<nouveau_access_token>" }
 ```
+
+---
+
+### Profil Utilisateur (`/api/users`)
+
+| Méthode | Endpoint | Auth | Description |
+|---------|----------|------|-------------|
+| `GET` | `/users/me` | ✅ | Profil complet de l'utilisateur connecté |
+| `PUT` | `/users/me` | ✅ | Mettre à jour `username`, `avatar`, `bio` |
+| `PATCH` | `/users/me/password` | ✅ | Changer le mot de passe (ancien mdp requis) |
+| `DELETE` | `/users/me` | ✅ | Anonymiser / supprimer le compte (RGPD) |
+| `GET` | `/users/:id` | ❌ | Profil public d'un utilisateur (sans données sensibles) |
 
 ---
 
@@ -141,13 +217,13 @@ Authorization: Bearer <jwt_token>
 
 | Méthode | Endpoint | Auth | Description |
 |---------|----------|------|-------------|
-| `GET` | `/items` | Optionnel | Liste les annonces (filtrages disponibles) |
+| `GET` | `/items` | Optionnel | Liste les annonces (filtrages + pagination) |
 | `GET` | `/items/:id` | Optionnel | Détail d'une annonce |
 | `POST` | `/items` | ✅ | Créer une annonce |
 | `PUT` | `/items/:id` | ✅ | Modifier une annonce (propriétaire) |
 | `DELETE` | `/items/:id` | ✅ | Supprimer une annonce (propriétaire ou admin) |
 | `PATCH` | `/items/:id/close` | ✅ | Marquer l'annonce comme résolue/réclamée |
-| `POST` | `/items/:id/photos` | ✅ | Uploader des photos pour une annonce |
+| `POST` | `/items/:id/photos` | ✅ | Uploader des photos (MIME vérifié) |
 | `DELETE` | `/photos/:id` | ✅ | Supprimer une photo |
 
 **GET `/items` — Query params disponibles**
@@ -160,22 +236,14 @@ Authorization: Bearer <jwt_token>
 | `status` | `string` | `ACTIVE`, `RESOLVED`, `PENDING` |
 | `q` | `string` | Recherche par mot-clé |
 | `page` | `number` | Page (défaut: 1) |
-| `limit` | `number` | Résultats par page (défaut: 20) |
+| `limit` | `number` | Résultats par page (défaut: 20, max: 100) |
 
-**POST `/items`**
+**Réponse paginée standard**
 ```json
-// Corps de la requête
 {
-  "title": "Portefeuille noir",
-  "description": "Trouvé près de la cafétéria",
-  "type": "FOUND",
-  "categoryId": 2,
-  "locationId": 3,
-  "date": "2026-04-17"
+  "data": [ { "id": 42, "title": "Portefeuille noir", ... } ],
+  "meta": { "total": 154, "page": 1, "limit": 20, "totalPages": 8 }
 }
-
-// Réponse 201
-{ "item": { "id": 42, "title": "Portefeuille noir", "status": "ACTIVE", ... } }
 ```
 
 ---
@@ -232,8 +300,20 @@ Authorization: Bearer <jwt_token>
 | Méthode | Endpoint | Auth | Description |
 |---------|----------|------|-------------|
 | `GET` | `/notifications` | ✅ | Liste des notifications de l'utilisateur |
+| `GET` | `/notifications/stream` | ✅ | Flux SSE en temps réel (`text/event-stream`) |
 | `PATCH` | `/notifications/read-all` | ✅ | Marquer toutes les notifications comme lues |
 | `PATCH` | `/notifications/:id/read` | ✅ | Marquer une notification comme lue |
+
+**Utilisation SSE côté client**
+```javascript
+const source = new EventSource('/api/notifications/stream', {
+  headers: { Authorization: `Bearer ${token}` }
+});
+source.onmessage = (event) => {
+  const notification = JSON.parse(event.data);
+  // Afficher la notification dans l'UI
+};
+```
 
 **GET `/notifications` — Exemple de réponse**
 ```json
@@ -324,6 +404,18 @@ Authorization: Bearer <jwt_token>
 ---
 
 ### Codes de Réponse
+
+Les erreurs suivent le format **RFC 7807** (`Content-Type: application/problem+json`) :
+
+```json
+{
+  "type": "https://campus-lost-found/errors/not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Item with id 99 not found",
+  "instance": "/api/items/99"
+}
+```
 
 | Code | Signification |
 |------|---------------|
