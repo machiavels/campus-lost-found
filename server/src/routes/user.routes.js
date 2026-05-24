@@ -2,10 +2,10 @@ const express = require('express');
 const router  = express.Router();
 const { authenticate } = require('../middleware/auth.middleware');
 const {
-  getMyProfile,
-  updateMyProfile,
+  getMe,
+  updateMe,
   changePassword,
-  deleteMyAccount,
+  deleteMe,
   getPublicProfile,
 } = require('../controllers/user.controller');
 
@@ -77,9 +77,9 @@ const {
  *       401:
  *         description: Non authentifié
  */
-router.get('/me',    authenticate, getMyProfile);
-router.put('/me',    authenticate, updateMyProfile);
-router.delete('/me', authenticate, deleteMyAccount);
+router.get('/me',    authenticate, getMe);
+router.put('/me',    authenticate, updateMe);
+router.delete('/me', authenticate, deleteMe);
 
 /**
  * @openapi
