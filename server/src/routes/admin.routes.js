@@ -1,53 +1,81 @@
-const router = require('express').Router();
-const ctrl   = require('../controllers/admin.controller');
-const { authenticate, requireRole } = require('../middleware/auth.middleware');
+const express = require('express');
+const router  = express.Router();
+const { authenticate, requireAdmin } = require('../middleware/auth.middleware');
+const {
+  getPendingItems,
+  moderateItem,
+} = require('../controllers/admin.item.controller');
+const {
+  getUsers,
+  getUserById,
+  updateUser,
+  setUserStatus,
+  setUserRole,
+} = require('../controllers/admin.user.controller');
+const {
+  getCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+} = require('../controllers/admin.category.controller');
+const {
+  getLocations,
+  createLocation,
+  updateLocation,
+  deleteLocation,
+} = require('../controllers/admin.location.controller');
 
-router.use(authenticate, requireRole('ADMIN'));
+// Toutes les routes admin nécessitent le rôle ADMIN
+router.use(authenticate, requireAdmin);
 
 /**
  * @openapi
  * tags:
- *   - name: Admin
- *     description: Admin-only — moderation, user management, categories & locations
+ *   name: Admin
+ *   description: Routes réservées aux administrateurs
  */
+
+// ── Modération des annonces ────────────────────────────────────────────────
 
 /**
  * @openapi
  * /admin/items:
  *   get:
  *     tags: [Admin]
- *     summary: List items pending moderation
+ *     summary: Items en attente de modération
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: List of pending items
+ *         description: Liste des items PENDING
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items: { $ref: '#/components/schemas/Item' }
+ *               items:
+ *                 $ref: '#/components/schemas/Item'
+ *       401:
+ *         description: Non authentifié
  *       403:
- *         description: Admin role required
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Error' }
+ *         description: Rôle ADMIN requis
  */
-router.get('/items',                    ctrl.listPendingItems);
+router.get('/items', getPendingItems);
 
 /**
  * @openapi
  * /admin/items/{id}/moderate:
  *   patch:
  *     tags: [Admin]
- *     summary: Moderate an item (approve/reject)
+ *     summary: Approuver ou rejeter une annonce
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     requestBody:
  *       required: true
  *       content:
@@ -56,76 +84,102 @@ router.get('/items',                    ctrl.listPendingItems);
  *             type: object
  *             required: [action]
  *             properties:
- *               action: { type: string, enum: [APPROVED, REJECTED] }
- *               reason: { type: string, example: 'Inappropriate content' }
+ *               action:
+ *                 type: string
+ *                 enum: [APPROVE, REJECT]
+ *               note:
+ *                 type: string
+ *                 description: Note de modération facultative
  *     responses:
  *       200:
- *         description: Item moderated
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 item: { $ref: '#/components/schemas/Item' }
+ *         description: Modération appliquée, auteur notifié
+ *       401:
+ *         description: Non authentifié
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Annonce introuvable
  */
-router.patch('/items/:id/moderate',     ctrl.moderateItem);
-router.patch('/items/:id/verify',       ctrl.verifyItem);   // legacy
-router.patch('/items/:id/reject',       ctrl.rejectItem);   // legacy
+router.patch('/items/:id/moderate', moderateItem);
+
+// ── Gestion des utilisateurs ───────────────────────────────────────────────
 
 /**
  * @openapi
  * /admin/users:
  *   get:
  *     tags: [Admin]
- *     summary: List all users
+ *     summary: Liste tous les utilisateurs
  *     security:
  *       - BearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
  *     responses:
  *       200:
- *         description: List of users
+ *         description: Liste paginée
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items: { $ref: '#/components/schemas/User' }
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/User'
+ *                 meta:
+ *                   $ref: '#/components/schemas/PaginationMeta'
+ *       403:
+ *         description: Rôle ADMIN requis
  */
-router.get('/users',                    ctrl.listUsers);
+router.get('/users', getUsers);
 
 /**
  * @openapi
  * /admin/users/{id}:
  *   get:
  *     tags: [Admin]
- *     summary: Get full user detail
+ *     summary: Détail d'un utilisateur
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     responses:
  *       200:
- *         description: Full user detail (includes email)
+ *         description: Utilisateur trouvé
  *         content:
  *           application/json:
- *             schema: { $ref: '#/components/schemas/User' }
- */
-router.get('/users/:id',                ctrl.getUserDetail);
-
-/**
- * @openapi
- * /admin/users/{id}:
+ *             schema:
+ *               $ref: '#/components/schemas/User'
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Utilisateur introuvable
  *   put:
  *     tags: [Admin]
- *     summary: Update a user
+ *     summary: Modifier un utilisateur
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     requestBody:
  *       required: true
  *       content:
@@ -133,59 +187,73 @@ router.get('/users/:id',                ctrl.getUserDetail);
  *           schema:
  *             type: object
  *             properties:
- *               username: { type: string }
- *               role:     { type: string, enum: [USER, ADMIN] }
- *               status:   { type: string, enum: [ACTIVE, SUSPENDED] }
+ *               username:
+ *                 type: string
+ *               email:
+ *                 type: string
+ *                 format: email
  *     responses:
  *       200:
- *         description: User updated
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/User' }
+ *         description: Utilisateur modifié
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Utilisateur introuvable
  */
-router.put('/users/:id',                ctrl.updateUser);
+router.get('/users/:id', getUserById);
+router.put('/users/:id', updateUser);
 
 /**
  * @openapi
  * /admin/users/{id}/status:
  *   patch:
  *     tags: [Admin]
- *     summary: Set user status (active/suspended)
+ *     summary: Activer ou suspendre un compte
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [status]
+ *             required: [active]
  *             properties:
- *               status: { type: string, enum: [ACTIVE, SUSPENDED] }
+ *               active:
+ *                 type: boolean
+ *                 example: false
  *     responses:
  *       200:
- *         description: Status updated
+ *         description: Statut mis à jour
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Utilisateur introuvable
  */
-router.patch('/users/:id/status',       ctrl.setUserStatus);
+router.patch('/users/:id/status', setUserStatus);
 
 /**
  * @openapi
  * /admin/users/{id}/role:
  *   patch:
  *     tags: [Admin]
- *     summary: Change user role
+ *     summary: Changer le rôle d'un utilisateur
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     requestBody:
  *       required: true
  *       content:
@@ -194,33 +262,43 @@ router.patch('/users/:id/status',       ctrl.setUserStatus);
  *             type: object
  *             required: [role]
  *             properties:
- *               role: { type: string, enum: [USER, ADMIN] }
+ *               role:
+ *                 type: string
+ *                 enum: [USER, ADMIN]
  *     responses:
  *       200:
- *         description: Role updated
+ *         description: Rôle mis à jour
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Utilisateur introuvable
  */
-router.patch('/users/:id/role',         ctrl.changeUserRole);
-router.patch('/users/:id/toggle',       ctrl.toggleUserStatus); // legacy
+router.patch('/users/:id/role', setUserRole);
+
+// ── Catégories ────────────────────────────────────────────────────────────
 
 /**
  * @openapi
  * /admin/categories:
  *   get:
  *     tags: [Admin]
- *     summary: List all categories (admin)
+ *     summary: Liste toutes les catégories
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: List of categories
+ *         description: Catégories
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items: { $ref: '#/components/schemas/Category' }
+ *               items:
+ *                 $ref: '#/components/schemas/Category'
+ *       403:
+ *         description: Rôle ADMIN requis
  *   post:
  *     tags: [Admin]
- *     summary: Create a category
+ *     summary: Créer une catégorie
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -231,81 +309,94 @@ router.patch('/users/:id/toggle',       ctrl.toggleUserStatus); // legacy
  *             type: object
  *             required: [name]
  *             properties:
- *               name: { type: string, example: 'Electronics' }
+ *               name:
+ *                 type: string
+ *                 example: Électronique
  *     responses:
  *       201:
- *         description: Category created
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Category' }
+ *         description: Catégorie créée
+ *       403:
+ *         description: Rôle ADMIN requis
  */
-router.get('/categories',               ctrl.listCategories);
-router.post('/categories',              ctrl.createCategory);
+router.get('/categories',     getCategories);
+router.post('/categories',    createCategory);
 
 /**
  * @openapi
  * /admin/categories/{id}:
  *   put:
  *     tags: [Admin]
- *     summary: Update a category
+ *     summary: Modifier une catégorie
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name]
  *             properties:
- *               name: { type: string }
+ *               name:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Category updated
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Category' }
+ *         description: Catégorie modifiée
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Catégorie introuvable
  *   delete:
  *     tags: [Admin]
- *     summary: Delete a category
+ *     summary: Supprimer une catégorie
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *     responses:
  *       204:
- *         description: Category deleted
+ *         description: Catégorie supprimée
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Catégorie introuvable
  */
-router.put('/categories/:id',           ctrl.updateCategory);
-router.delete('/categories/:id',        ctrl.deleteCategory);
+router.put('/categories/:id',    updateCategory);
+router.delete('/categories/:id', deleteCategory);
+
+// ── Lieux ────────────────────────────────────────────────────────────────
 
 /**
  * @openapi
  * /admin/locations:
  *   get:
  *     tags: [Admin]
- *     summary: List all locations (admin)
+ *     summary: Liste tous les lieux
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: List of locations
+ *         description: Lieux
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items: { $ref: '#/components/schemas/Location' }
+ *               items:
+ *                 $ref: '#/components/schemas/Location'
+ *       403:
+ *         description: Rôle ADMIN requis
  *   post:
  *     tags: [Admin]
- *     summary: Create a location
+ *     summary: Créer un lieu
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -316,60 +407,68 @@ router.delete('/categories/:id',        ctrl.deleteCategory);
  *             type: object
  *             required: [name]
  *             properties:
- *               name: { type: string, example: 'Library' }
+ *               name:
+ *                 type: string
+ *                 example: Bibliothèque
  *     responses:
  *       201:
- *         description: Location created
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Location' }
+ *         description: Lieu créé
+ *       403:
+ *         description: Rôle ADMIN requis
  */
-router.get('/locations',                ctrl.listLocations);
-router.post('/locations',               ctrl.createLocation);
+router.get('/locations',     getLocations);
+router.post('/locations',    createLocation);
 
 /**
  * @openapi
  * /admin/locations/{id}:
  *   put:
  *     tags: [Admin]
- *     summary: Update a location
+ *     summary: Modifier un lieu
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [name]
  *             properties:
- *               name: { type: string }
+ *               name:
+ *                 type: string
  *     responses:
  *       200:
- *         description: Location updated
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Location' }
+ *         description: Lieu modifié
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Lieu introuvable
  *   delete:
  *     tags: [Admin]
- *     summary: Delete a location
+ *     summary: Supprimer un lieu
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *     responses:
  *       204:
- *         description: Location deleted
+ *         description: Lieu supprimé
+ *       403:
+ *         description: Rôle ADMIN requis
+ *       404:
+ *         description: Lieu introuvable
  */
-router.put('/locations/:id',            ctrl.updateLocation);
-router.delete('/locations/:id',         ctrl.deleteLocation);
+router.put('/locations/:id',    updateLocation);
+router.delete('/locations/:id', deleteLocation);
 
 module.exports = router;

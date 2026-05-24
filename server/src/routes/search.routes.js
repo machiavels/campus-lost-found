@@ -1,14 +1,13 @@
-const router     = require('express').Router();
-const ctrl       = require('../controllers/search.controller');
-const { optionalAuth } = require('../middleware/optionalAuth.middleware');
-const validate   = require('../middleware/validate.middleware');
-const { searchQuerySchema } = require('../middleware/validators/search.validator');
+const express = require('express');
+const router  = express.Router();
+const { optionalAuth } = require('../middleware/auth.middleware');
+const { search } = require('../controllers/search.controller');
 
 /**
  * @openapi
  * tags:
- *   - name: Search
- *     description: Full-text search across items
+ *   name: Search
+ *   description: Recherche multi-critères d'annonces
  */
 
 /**
@@ -16,57 +15,65 @@ const { searchQuerySchema } = require('../middleware/validators/search.validator
  * /search:
  *   get:
  *     tags: [Search]
- *     summary: Search items (public, auth optional for enriched results)
+ *     summary: Recherche avancée
+ *     description: Recherche full-text dans les titres et descriptions, avec filtres cumulatifs.
  *     parameters:
  *       - in: query
- *         name: keyword
- *         schema: { type: string }
- *         description: Free-text keyword search
+ *         name: q
+ *         schema:
+ *           type: string
+ *         description: Terme de recherche
+ *         example: portefeuille
  *       - in: query
  *         name: type
- *         schema: { type: string, enum: [LOST, FOUND] }
+ *         schema:
+ *           type: string
+ *           enum: [LOST, FOUND]
  *       - in: query
  *         name: categoryId
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *       - in: query
  *         name: locationId
- *         schema: { type: integer }
+ *         schema:
+ *           type: integer
  *       - in: query
- *         name: from
- *         schema: { type: string, format: date }
- *         description: Filter items created after this date
+ *         name: startDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         example: "2026-01-01"
  *       - in: query
- *         name: to
- *         schema: { type: string, format: date }
- *         description: Filter items created before this date
- *       - in: query
- *         name: status
- *         schema: { type: string, enum: [PENDING, ACTIVE, CLAIMED, REJECTED] }
- *         description: Admins only
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
+ *         example: "2026-12-31"
  *       - in: query
  *         name: page
- *         schema: { type: integer, default: 1 }
+ *         schema:
+ *           type: integer
+ *           default: 1
  *       - in: query
  *         name: limit
- *         schema: { type: integer, default: 20 }
+ *         schema:
+ *           type: integer
+ *           default: 20
  *     responses:
  *       200:
- *         description: Search results
+ *         description: Résultats paginés
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 items:
+ *                 data:
  *                   type: array
- *                   items: { $ref: '#/components/schemas/Item' }
- *                 meta: { $ref: '#/components/schemas/PaginationMeta' }
+ *                   items:
+ *                     $ref: '#/components/schemas/Item'
+ *                 meta:
+ *                   $ref: '#/components/schemas/PaginationMeta'
  */
-router.get(
-  '/',
-  optionalAuth,
-  validate(searchQuerySchema, 'query'),
-  ctrl.searchItems,
-);
+router.get('/', optionalAuth, search);
 
 module.exports = router;

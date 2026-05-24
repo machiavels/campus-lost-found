@@ -1,16 +1,13 @@
-/**
- * Public reference routes — no authentication required
- * GET /api/categories   → list all categories
- * GET /api/locations    → list all locations
- */
-const router = require('express').Router();
-const ctrl   = require('../controllers/admin.controller');
+const express = require('express');
+const router  = express.Router();
+const { getCategories } = require('../controllers/admin.category.controller');
+const { getLocations }  = require('../controllers/admin.location.controller');
 
 /**
  * @openapi
  * tags:
- *   - name: Reference
- *     description: Public reference data — categories and locations
+ *   name: Reference
+ *   description: Référentiels publics (catégories, lieux)
  */
 
 /**
@@ -18,33 +15,35 @@ const ctrl   = require('../controllers/admin.controller');
  * /categories:
  *   get:
  *     tags: [Reference]
- *     summary: List all categories (public)
+ *     summary: Liste publique des catégories
  *     responses:
  *       200:
- *         description: List of categories
+ *         description: Catégories disponibles
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items: { $ref: '#/components/schemas/Category' }
+ *               items:
+ *                 $ref: '#/components/schemas/Category'
  */
-router.get('/categories', ctrl.listCategories);
+router.get('/categories', getCategories);
 
 /**
  * @openapi
  * /locations:
  *   get:
  *     tags: [Reference]
- *     summary: List all locations (public)
+ *     summary: Liste publique des lieux
  *     responses:
  *       200:
- *         description: List of locations
+ *         description: Lieux disponibles
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items: { $ref: '#/components/schemas/Location' }
+ *               items:
+ *                 $ref: '#/components/schemas/Location'
  */
-router.get('/locations',  ctrl.listLocations);
+router.get('/locations', getLocations);
 
 module.exports = router;

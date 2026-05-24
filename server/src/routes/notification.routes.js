@@ -1,6 +1,5 @@
 const express = require('express');
 const router  = express.Router();
-
 const { authenticate } = require('../middleware/auth.middleware');
 const {
   getNotifications,
@@ -9,13 +8,11 @@ const {
   markOneRead,
 } = require('../controllers/notification.controller');
 
-router.use(authenticate);
-
 /**
  * @openapi
  * tags:
- *   - name: Notifications
- *     description: In-app notifications and SSE real-time stream
+ *   name: Notifications
+ *   description: Notifications in-app et flux SSE en temps réel
  */
 
 /**
@@ -23,77 +20,97 @@ router.use(authenticate);
  * /notifications:
  *   get:
  *     tags: [Notifications]
- *     summary: List all notifications for the authenticated user
+ *     summary: Liste des notifications
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: List of notifications
+ *         description: Notifications de l'utilisateur connecté
  *         content:
  *           application/json:
  *             schema:
- *               type: array
- *               items: { $ref: '#/components/schemas/Notification' }
+ *               type: object
+ *               properties:
+ *                 notifications:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Notification'
+ *                 unreadCount:
+ *                   type: integer
+ *                   example: 3
+ *       401:
+ *         description: Non authentifié
  */
-router.get('/',              getNotifications);
+router.get('/', authenticate, getNotifications);
 
 /**
  * @openapi
  * /notifications/stream:
  *   get:
  *     tags: [Notifications]
- *     summary: SSE stream — real-time push notifications
+ *     summary: Flux SSE en temps réel
  *     description: |
- *       Opens a Server-Sent Events connection. The client receives `data:` events
- *       whenever a new notification is created for the authenticated user.
- *       Keep this connection alive; the server sends a heartbeat every 30 s.
+ *       Ouvre un flux Server-Sent Events (Content-Type: text/event-stream).
+ *       Les nouvelles notifications sont poussées sans polling.
+ *       Exemple côté client :
+ *       ```js
+ *       const src = new EventSource('/api/notifications/stream', { headers: { Authorization: `Bearer ${token}` } });
+ *       src.onmessage = e => console.log(JSON.parse(e.data));
+ *       ```
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: SSE stream opened
+ *         description: Connexion SSE établie
  *         content:
  *           text/event-stream:
  *             schema:
  *               type: string
- *               example: "data: {\"type\":\"CLAIM_APPROVED\",\"message\":\"Your claim was approved\"}\n\n"
+ *               example: "data: {\"type\":\"NEW_MESSAGE\",\"message\":\"Vous avez reçu un message\"}\n\n"
+ *       401:
+ *         description: Non authentifié
  */
-router.get('/stream',        streamNotifications);
+router.get('/stream', authenticate, streamNotifications);
 
 /**
  * @openapi
  * /notifications/read-all:
  *   patch:
  *     tags: [Notifications]
- *     summary: Mark all notifications as read
+ *     summary: Tout marquer comme lu
  *     security:
  *       - BearerAuth: []
  *     responses:
- *       204:
- *         description: All notifications marked as read
+ *       200:
+ *         description: Toutes les notifications marquées comme lues
+ *       401:
+ *         description: Non authentifié
  */
-router.patch('/read-all',    markAllRead);
+router.patch('/read-all', authenticate, markAllRead);
 
 /**
  * @openapi
  * /notifications/{id}/read:
  *   patch:
  *     tags: [Notifications]
- *     summary: Mark a single notification as read
+ *     summary: Marquer une notification comme lue
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema: { type: string, format: uuid }
+ *         schema:
+ *           type: string
+ *           format: uuid
  *     responses:
  *       200:
- *         description: Notification marked as read
- *         content:
- *           application/json:
- *             schema: { $ref: '#/components/schemas/Notification' }
+ *         description: Notification marquée comme lue
+ *       401:
+ *         description: Non authentifié
+ *       404:
+ *         description: Notification introuvable
  */
-router.patch('/:id/read',   markOneRead);
+router.patch('/:id/read', authenticate, markOneRead);
 
 module.exports = router;
