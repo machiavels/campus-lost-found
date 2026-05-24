@@ -1,18 +1,14 @@
-const express = require('express');
-const router  = express.Router();
-const { authenticate, requireAdmin } = require('../middleware/auth.middleware');
-const {
-  submitClaim,
-  getClaims,
-  getMyClaims,
-  reviewClaim,
-} = require('../controllers/claim.controller');
+const router = require('express').Router();
+const ctrl   = require('../controllers/claim.controller');
+const { authenticate, requireRole } = require('../middleware/auth.middleware');
+
+router.use(authenticate);
 
 /**
  * @openapi
  * tags:
- *   name: Claims
- *   description: Demandes de réclamation d'objets
+ *   - name: Claims
+ *     description: Claim requests — submit, list, review (admin)
  */
 
 /**
@@ -20,7 +16,7 @@ const {
  * /claims:
  *   post:
  *     tags: [Claims]
- *     summary: Soumettre une réclamation
+ *     summary: Submit a claim request on an item
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -29,112 +25,111 @@ const {
  *         application/json:
  *           schema:
  *             type: object
- *             required: [itemId, description]
+ *             required: [itemId, message]
  *             properties:
- *               itemId:
- *                 type: string
- *                 format: uuid
- *               description:
- *                 type: string
- *                 example: "C'est mon portefeuille, il contient ma carte étudiante n°12345"
+ *               itemId:  { type: string, format: uuid }
+ *               message: { type: string, example: 'I lost this on Monday near building A' }
  *     responses:
  *       201:
- *         description: Réclamation soumise
+ *         description: Claim submitted
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 claim:
- *                   $ref: '#/components/schemas/Claim'
+ *                 claim: { $ref: '#/components/schemas/Claim' }
  *       400:
- *         description: Données invalides
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       401:
- *         description: Non authentifié
- *       409:
- *         description: Réclamation déjà existante sur cet item
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
+ */
+router.post('/',                 ctrl.submitClaim);
+
+/**
+ * @openapi
+ * /claims:
  *   get:
  *     tags: [Claims]
- *     summary: Liste des réclamations
- *     description: Admin — toutes les réclamations. Utilisateur — uniquement les siennes.
+ *     summary: List claims (admin sees all, user sees own)
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Liste retournée
+ *         description: List of claims
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Claim'
- *       401:
- *         description: Non authentifié
+ *               items: { $ref: '#/components/schemas/Claim' }
  */
-router.post('/', authenticate, submitClaim);
-router.get('/',  authenticate, getClaims);
+router.get('/',                  ctrl.listClaims);
 
 /**
  * @openapi
  * /claims/my:
  *   get:
  *     tags: [Claims]
- *     summary: Mes réclamations
+ *     summary: Get own claims
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Réclamations de l'utilisateur connecté
+ *         description: Authenticated user's claims
  *         content:
  *           application/json:
  *             schema:
  *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Claim'
- *       401:
- *         description: Non authentifié
+ *               items: { $ref: '#/components/schemas/Claim' }
  */
-router.get('/my', authenticate, getMyClaims);
+router.get('/my',                ctrl.myClaims);
 
 /**
  * @openapi
  * /claims/{id}/review:
  *   patch:
  *     tags: [Claims]
- *     summary: Approuver ou rejeter une réclamation (Admin)
+ *     summary: Review a claim — approve or reject (admin only)
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [status]
+ *             required: [action]
  *             properties:
- *               status:
- *                 type: string
- *                 enum: [APPROVED, REJECTED]
- *               note:
- *                 type: string
- *                 description: Note facultative de modération
+ *               action: { type: string, enum: [APPROVED, REJECTED] }
  *     responses:
  *       200:
- *         description: Décision enregistrée, notification envoyée
- *       401:
- *         description: Non authentifié
+ *         description: Claim reviewed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 claim: { $ref: '#/components/schemas/Claim' }
  *       403:
- *         description: Rôle ADMIN requis
- *       404:
- *         description: Réclamation introuvable
+ *         description: Admin role required
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.patch('/:id/review', authenticate, requireAdmin, reviewClaim);
+router.patch('/:id/review',      requireRole('ADMIN'), ctrl.reviewClaim);
+
+// Legacy routes kept for compatibility
+router.patch('/:id/approve',     requireRole('ADMIN'), ctrl.approveClaim);
+router.patch('/:id/reject',      requireRole('ADMIN'), ctrl.rejectClaim);
 
 module.exports = router;

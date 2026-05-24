@@ -1,20 +1,14 @@
-const express = require('express');
-const router  = express.Router();
+const router = require('express').Router();
+const ctrl   = require('../controllers/message.controller');
 const { authenticate } = require('../middleware/auth.middleware');
-const {
-  getInbox,
-  getConversations,
-  getThread,
-  getItemMessages,
-  sendMessage,
-  markRead,
-} = require('../controllers/message.controller');
+
+router.use(authenticate);
 
 /**
  * @openapi
  * tags:
- *   name: Messages
- *   description: Messagerie interne entre utilisateurs
+ *   - name: Messages
+ *     description: In-app messaging between users about items
  */
 
 /**
@@ -22,26 +16,103 @@ const {
  * /messages:
  *   get:
  *     tags: [Messages]
- *     summary: Inbox — messages reçus
+ *     summary: Get inbox (received messages)
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Liste des messages reçus
+ *         description: List of received messages
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 messages:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Message'
- *       401:
- *         description: Non authentifié
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Message' }
+ */
+router.get('/', ctrl.getInbox);
+
+/**
+ * @openapi
+ * /messages/conversations:
+ *   get:
+ *     tags: [Messages]
+ *     summary: List grouped conversations
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Grouped conversation list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   partner: { $ref: '#/components/schemas/User' }
+ *                   item:    { $ref: '#/components/schemas/Item' }
+ *                   lastMessage: { $ref: '#/components/schemas/Message' }
+ *                   unreadCount: { type: integer }
+ */
+router.get('/conversations', ctrl.getConversations);
+
+/**
+ * @openapi
+ * /messages/thread/{itemId}/{partnerId}:
+ *   get:
+ *     tags: [Messages]
+ *     summary: Get message thread with a specific user about an item
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - in: path
+ *         name: partnerId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: Thread messages
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Message' }
+ */
+router.get('/thread/:itemId/:partnerId', ctrl.getThread);
+
+/**
+ * @openapi
+ * /messages/item/{itemId}:
+ *   get:
+ *     tags: [Messages]
+ *     summary: Get all messages for an item (both sides)
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: itemId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: All messages for the item
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items: { $ref: '#/components/schemas/Message' }
+ */
+router.get('/item/:itemId', ctrl.getThreadByItem);
+
+/**
+ * @openapi
+ * /messages:
  *   post:
  *     tags: [Messages]
- *     summary: Envoyer un message
+ *     summary: Send a message
  *     security:
  *       - BearerAuth: []
  *     requestBody:
@@ -52,130 +123,44 @@ const {
  *             type: object
  *             required: [receiverId, itemId, content]
  *             properties:
- *               receiverId:
- *                 type: string
- *                 format: uuid
- *               itemId:
- *                 type: string
- *                 format: uuid
- *               content:
- *                 type: string
- *                 example: "Bonjour, est-ce votre portefeuille ?"
+ *               receiverId: { type: string, format: uuid }
+ *               itemId:     { type: string, format: uuid }
+ *               content:    { type: string, example: 'Is this backpack still available?' }
  *     responses:
  *       201:
- *         description: Message envoyé
+ *         description: Message sent
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 message:
- *                   $ref: '#/components/schemas/Message'
- *       400:
- *         description: Données invalides
- *       401:
- *         description: Non authentifié
+ *                 message: { $ref: '#/components/schemas/Message' }
  */
-router.get('/',    authenticate, getInbox);
-router.post('/',   authenticate, sendMessage);
-
-/**
- * @openapi
- * /messages/conversations:
- *   get:
- *     tags: [Messages]
- *     summary: Liste des conversations
- *     security:
- *       - BearerAuth: []
- *     responses:
- *       200:
- *         description: Conversations groupées par item et interlocuteur
- *       401:
- *         description: Non authentifié
- */
-router.get('/conversations', authenticate, getConversations);
-
-/**
- * @openapi
- * /messages/thread/{itemId}/{partnerId}:
- *   get:
- *     tags: [Messages]
- *     summary: Fil d'une conversation
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *       - in: path
- *         name: partnerId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Messages du fil
- *         content:
- *           application/json:
- *             schema:
- *               type: array
- *               items:
- *                 $ref: '#/components/schemas/Message'
- *       401:
- *         description: Non authentifié
- */
-router.get('/thread/:itemId/:partnerId', authenticate, getThread);
-
-/**
- * @openapi
- * /messages/item/{itemId}:
- *   get:
- *     tags: [Messages]
- *     summary: Messages liés à un item
- *     security:
- *       - BearerAuth: []
- *     parameters:
- *       - in: path
- *         name: itemId
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Liste des messages
- *       401:
- *         description: Non authentifié
- */
-router.get('/item/:itemId', authenticate, getItemMessages);
+router.post('/', ctrl.sendMessage);
 
 /**
  * @openapi
  * /messages/{id}/read:
  *   patch:
  *     tags: [Messages]
- *     summary: Marquer un message comme lu
+ *     summary: Mark a message as read
  *     security:
  *       - BearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
  *         required: true
- *         schema:
- *           type: string
- *           format: uuid
+ *         schema: { type: string, format: uuid }
  *     responses:
  *       200:
- *         description: Message marqué comme lu
- *       401:
- *         description: Non authentifié
- *       404:
- *         description: Message introuvable
+ *         description: Message marked as read
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message: { $ref: '#/components/schemas/Message' }
  */
-router.patch('/:id/read', authenticate, markRead);
+router.patch('/:id/read', ctrl.markRead);
 
 module.exports = router;
