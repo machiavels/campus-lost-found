@@ -6,7 +6,7 @@ const {
   login,
   refresh,
   logout,
-  getMe,
+  me,
 } = require('../controllers/auth.controller');
 
 /**
@@ -164,6 +164,6 @@ router.post('/logout', authenticate, logout);
  *       401:
  *         description: Non authentifié
  */
-router.get('/me', authenticate, getMe);
+router.get('/me', authenticate, me);
 
 module.exports = router;
