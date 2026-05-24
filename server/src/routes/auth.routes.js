@@ -1,19 +1,14 @@
-const express = require('express');
-const router  = express.Router();
-const { authenticate } = require('../middleware/auth.middleware');
-const {
-  register,
-  login,
-  refresh,
-  logout,
-  me,
-} = require('../controllers/auth.controller');
+const router   = require('express').Router();
+const { register, login, me, refresh, logout } = require('../controllers/auth.controller');
+const { authenticate }        = require('../middleware/auth.middleware');
+const validate                = require('../middleware/validate.middleware');
+const { registerSchema, loginSchema } = require('../services/auth.service');
 
 /**
  * @openapi
  * tags:
- *   name: Auth
- *   description: Inscription, connexion et gestion des tokens JWT
+ *   - name: Auth
+ *     description: Authentication — register, login, token refresh, logout
  */
 
 /**
@@ -21,8 +16,7 @@ const {
  * /auth/register:
  *   post:
  *     tags: [Auth]
- *     summary: Inscription
- *     description: Crée un compte utilisateur. L'email doit appartenir à un domaine institutionnel autorisé (ex. eleve.isep.fr).
+ *     summary: Register a new account
  *     requestBody:
  *       required: true
  *       content:
@@ -34,41 +28,44 @@ const {
  *               email:
  *                 type: string
  *                 format: email
- *                 example: alice@eleve.isep.fr
+ *                 example: alice@campus.fr
  *               password:
  *                 type: string
+ *                 format: password
  *                 minLength: 8
- *                 example: Secret123!
+ *                 example: Passw0rd!
  *               username:
  *                 type: string
  *                 example: alice42
  *     responses:
  *       201:
- *         description: Compte créé avec succès
+ *         description: Account created — returns access token
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *                 token:
- *                   type: string
- *                   description: Access token JWT (15 min)
+ *                 accessToken: { type: string }
+ *                 user: { $ref: '#/components/schemas/User' }
  *       400:
- *         description: Données invalides ou domaine email non autorisé
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  *       409:
- *         description: Email déjà utilisé
+ *         description: Email already in use
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.post('/register', register);
+router.post('/register', validate(registerSchema), register);
 
 /**
  * @openapi
  * /auth/login:
  *   post:
  *     tags: [Auth]
- *     summary: Connexion
- *     description: Retourne un access token (15 min) et pose un cookie HttpOnly contenant le refresh token (7 jours).
+ *     summary: Login and get tokens
  *     requestBody:
  *       required: true
  *       content:
@@ -80,52 +77,50 @@ router.post('/register', register);
  *               email:
  *                 type: string
  *                 format: email
- *                 example: alice@eleve.isep.fr
+ *                 example: alice@campus.fr
  *               password:
  *                 type: string
- *                 example: Secret123!
+ *                 format: password
+ *                 example: Passw0rd!
  *     responses:
  *       200:
- *         description: Connexion réussie
- *         headers:
- *           Set-Cookie:
- *             description: refresh_token (HttpOnly; Secure; SameSite=Strict)
- *             schema:
- *               type: string
+ *         description: Login successful — access token in body, refresh token in httpOnly cookie
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 token:
- *                   type: string
- *                   description: Access token JWT
- *                 user:
- *                   $ref: '#/components/schemas/User'
+ *                 accessToken: { type: string }
+ *                 user: { $ref: '#/components/schemas/User' }
  *       401:
- *         description: Identifiants invalides
+ *         description: Invalid credentials
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
-router.post('/login', login);
+router.post('/login', validate(loginSchema), login);
 
 /**
  * @openapi
  * /auth/refresh:
  *   post:
  *     tags: [Auth]
- *     summary: Renouveler l'access token
- *     description: Lit le refresh token depuis le cookie HttpOnly et retourne un nouvel access token.
+ *     summary: Rotate refresh token and get a new access token
+ *     description: Requires the `refreshToken` httpOnly cookie set at login.
  *     responses:
  *       200:
- *         description: Nouveau token généré
+ *         description: New access token issued
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 token:
- *                   type: string
+ *                 accessToken: { type: string }
  *       401:
- *         description: Refresh token absent, invalide ou expiré
+ *         description: Missing or invalid refresh token
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
 router.post('/refresh', refresh);
 
@@ -134,35 +129,34 @@ router.post('/refresh', refresh);
  * /auth/logout:
  *   post:
  *     tags: [Auth]
- *     summary: Déconnexion
- *     description: Invalide le refresh token en base et efface le cookie.
+ *     summary: Logout — revoke refresh token and clear cookie
  *     security:
  *       - BearerAuth: []
  *     responses:
- *       200:
- *         description: Déconnexion réussie
- *       401:
- *         description: Non authentifié
+ *       204:
+ *         description: Logged out successfully
  */
-router.post('/logout', authenticate, logout);
+router.post('/logout', logout);
 
 /**
  * @openapi
  * /auth/me:
  *   get:
  *     tags: [Auth]
- *     summary: Profil de l'utilisateur connecté
+ *     summary: Get the authenticated user's profile
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
- *         description: Profil retourné
+ *         description: Current user object
  *         content:
  *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/User'
+ *             schema: { $ref: '#/components/schemas/User' }
  *       401:
- *         description: Non authentifié
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema: { $ref: '#/components/schemas/Error' }
  */
 router.get('/me', authenticate, me);
 
