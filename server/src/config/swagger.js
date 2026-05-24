@@ -1,3 +1,4 @@
+const path       = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 
 const options = {
@@ -18,9 +19,9 @@ const options = {
     servers: [
       {
         url: 'http://localhost:{port}/api',
-        description: 'Local development server',
+        description: 'Serveur de développement',
         variables: {
-          port: { default: '3000', description: 'Port defined by PORT env var' },
+          port: { default: '3000', description: 'Port défini par la variable PORT' },
         },
       },
     ],
@@ -30,7 +31,7 @@ const options = {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
-          description: 'Access token obtained from POST /auth/login or POST /auth/refresh',
+          description: 'Access token obtenu via POST /auth/login ou POST /auth/refresh',
         },
       },
       schemas: {
@@ -43,9 +44,9 @@ const options = {
         PaginationMeta: {
           type: 'object',
           properties: {
-            total:    { type: 'integer', example: 42 },
-            page:     { type: 'integer', example: 1 },
-            limit:    { type: 'integer', example: 20 },
+            total:      { type: 'integer', example: 42 },
+            page:       { type: 'integer', example: 1 },
+            limit:      { type: 'integer', example: 20 },
             totalPages: { type: 'integer', example: 3 },
           },
         },
@@ -53,7 +54,7 @@ const options = {
           type: 'object',
           properties: {
             id:        { type: 'string', format: 'uuid' },
-            email:     { type: 'string', format: 'email', example: 'alice@campus.fr' },
+            email:     { type: 'string', format: 'email', example: 'alice@eleve.isep.fr' },
             username:  { type: 'string', example: 'alice42' },
             role:      { type: 'string', enum: ['USER', 'ADMIN'], example: 'USER' },
             createdAt: { type: 'string', format: 'date-time' },
@@ -63,8 +64,8 @@ const options = {
           type: 'object',
           properties: {
             id:          { type: 'string', format: 'uuid' },
-            title:       { type: 'string', example: 'Blue backpack' },
-            description: { type: 'string', example: 'Found near the library entrance' },
+            title:       { type: 'string', example: 'Sac à dos bleu' },
+            description: { type: 'string', example: 'Trouvé près de la bibliothèque' },
             type:        { type: 'string', enum: ['LOST', 'FOUND'], example: 'FOUND' },
             status:      { type: 'string', enum: ['PENDING', 'ACTIVE', 'CLAIMED', 'REJECTED'], example: 'ACTIVE' },
             categoryId:  { type: 'integer', example: 1 },
@@ -80,7 +81,7 @@ const options = {
             id:        { type: 'string', format: 'uuid' },
             itemId:    { type: 'string', format: 'uuid' },
             userId:    { type: 'string', format: 'uuid' },
-            message:   { type: 'string', example: 'I lost this backpack on Monday' },
+            message:   { type: 'string', example: 'Mon portefeuille perdu lundi matin' },
             status:    { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED'], example: 'PENDING' },
             createdAt: { type: 'string', format: 'date-time' },
           },
@@ -89,7 +90,7 @@ const options = {
           type: 'object',
           properties: {
             id:         { type: 'string', format: 'uuid' },
-            content:    { type: 'string', example: 'Hi, is this backpack still available?' },
+            content:    { type: 'string', example: 'Bonjour, est-ce votre portefeuille ?' },
             itemId:     { type: 'string', format: 'uuid' },
             senderId:   { type: 'string', format: 'uuid' },
             receiverId: { type: 'string', format: 'uuid' },
@@ -102,7 +103,7 @@ const options = {
           properties: {
             id:        { type: 'string', format: 'uuid' },
             type:      { type: 'string', example: 'CLAIM_APPROVED' },
-            message:   { type: 'string', example: 'Your claim has been approved' },
+            message:   { type: 'string', example: 'Votre réclamation a été approuvée' },
             read:      { type: 'boolean', example: false },
             createdAt: { type: 'string', format: 'date-time' },
           },
@@ -111,21 +112,22 @@ const options = {
           type: 'object',
           properties: {
             id:   { type: 'integer', example: 1 },
-            name: { type: 'string', example: 'Electronics' },
+            name: { type: 'string', example: 'Électronique' },
           },
         },
         Location: {
           type: 'object',
           properties: {
             id:   { type: 'integer', example: 1 },
-            name: { type: 'string', example: 'Library' },
+            name: { type: 'string', example: 'Bibliothèque' },
           },
         },
       },
     },
   },
+  // Chemin absolu — indépendant du process.cwd()
   apis: [
-    './src/routes/*.js',
+    path.join(__dirname, '../routes/*.js'),
   ],
 };
 
