@@ -2,24 +2,24 @@ const prisma  = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
 const notify  = require('../services/notify');
 
-/** POST /api/claims
- *  Body: { itemId, message? }
- */
-exports.createClaim = catchAsync(async (req, res) => {
+const CLAIM_INCLUDE = {
+  item:     { select: { id: true, name: true, status: true, reportType: true } },
+  claimant: { select: { id: true, username: true, email: true } },
+};
+
+// ── Submit / create a claim ──────────────────────────────────────────────────
+const submitClaim = catchAsync(async (req, res) => {
   const { itemId, message } = req.body;
 
-  // 1. L'objet doit exister et être VERIFIED
   const item = await prisma.item.findUnique({ where: { id: itemId } });
   if (!item || item.status !== 'VERIFIED') {
     return res.status(404).json({ error: 'Item not found or not available for claiming' });
   }
 
-  // 2. L'utilisateur ne peut pas réclamer son propre objet
   if (item.reporterId === req.user.id) {
     return res.status(403).json({ error: 'You cannot claim your own item' });
   }
 
-  // 3. Évite les doublons
   const existing = await prisma.claimRequest.findFirst({
     where: { itemId, claimantId: req.user.id },
   });
@@ -28,18 +28,10 @@ exports.createClaim = catchAsync(async (req, res) => {
   }
 
   const claim = await prisma.claimRequest.create({
-    data: {
-      itemId,
-      claimantId: req.user.id,
-      message:    message ?? null,
-    },
-    include: {
-      item:     { select: { id: true, name: true, status: true } },
-      claimant: { select: { id: true, username: true, email: true } },
-    },
+    data: { itemId, claimantId: req.user.id, message: message ?? null },
+    include: CLAIM_INCLUDE,
   });
 
-  // Notifie le déclarant
   await notify.create({
     userId:  item.reporterId,
     type:    'CLAIM_RECEIVED',
@@ -51,17 +43,85 @@ exports.createClaim = catchAsync(async (req, res) => {
   res.status(201).json({ claim });
 });
 
-/** GET /api/claims — liste des claims de l'utilisateur connecté */
-exports.listMyClaims = catchAsync(async (req, res) => {
+exports.submitClaim  = submitClaim;
+exports.createClaim  = submitClaim; // legacy alias
+
+// ── List claims ──────────────────────────────────────────────────────────────
+// Admin sees all; regular user sees only their own
+const listClaims = catchAsync(async (req, res) => {
+  const where = req.user.role === 'ADMIN' ? {} : { claimantId: req.user.id };
   const claims = await prisma.claimRequest.findMany({
-    where:   { claimantId: req.user.id },
-    include: { item: { select: { id: true, name: true, status: true, reportType: true } } },
+    where,
+    include: CLAIM_INCLUDE,
     orderBy: { createdAt: 'desc' },
   });
   res.json({ claims });
 });
 
-/** GET /api/items/:id/claims — claims sur un item (reporter uniquement) */
+exports.listClaims = listClaims;
+
+// ── My claims ────────────────────────────────────────────────────────────────
+const myClaims = catchAsync(async (req, res) => {
+  const claims = await prisma.claimRequest.findMany({
+    where:   { claimantId: req.user.id },
+    include: CLAIM_INCLUDE,
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ claims });
+});
+
+exports.myClaims     = myClaims;
+exports.listMyClaims = myClaims; // legacy alias
+
+// ── Review a claim (admin) ───────────────────────────────────────────────────
+// action: APPROVED | REJECTED
+const reviewClaim = catchAsync(async (req, res) => {
+  const { action } = req.body;
+  if (!['APPROVED', 'REJECTED'].includes(action)) {
+    return res.status(422).json({ error: 'action must be APPROVED or REJECTED' });
+  }
+
+  const claim = await prisma.claimRequest.findUnique({
+    where:   { id: req.params.id },
+    include: { item: true },
+  });
+  if (!claim) {
+    return res.status(404).json({ error: 'Claim not found' });
+  }
+
+  const updated = await prisma.claimRequest.update({
+    where:   { id: req.params.id },
+    data:    { status: action },
+    include: CLAIM_INCLUDE,
+  });
+
+  await notify.create({
+    userId:  claim.claimantId,
+    type:    action === 'APPROVED' ? 'CLAIM_ACCEPTED' : 'CLAIM_REJECTED',
+    message: action === 'APPROVED'
+      ? `Your claim for "${claim.item.name}" has been approved.`
+      : `Your claim for "${claim.item.name}" was rejected.`,
+    itemId:  claim.itemId,
+    claimId: claim.id,
+  });
+
+  res.json({ claim: updated });
+});
+
+exports.reviewClaim = reviewClaim;
+
+// ── Approve / Reject shortcuts (legacy routes) ───────────────────────────────
+exports.approveClaim = catchAsync(async (req, res) => {
+  req.body.action = 'APPROVED';
+  return reviewClaim(req, res, () => {});
+});
+
+exports.rejectClaim = catchAsync(async (req, res) => {
+  req.body.action = 'REJECTED';
+  return reviewClaim(req, res, () => {});
+});
+
+// ── List claims on a specific item (reporter only) ───────────────────────────
 exports.listItemClaims = catchAsync(async (req, res) => {
   const item = await prisma.item.findUnique({ where: { id: req.params.id } });
   if (!item || item.reporterId !== req.user.id) {
@@ -76,9 +136,9 @@ exports.listItemClaims = catchAsync(async (req, res) => {
   res.json({ claims });
 });
 
-/** PATCH /api/claims/:id — accepte ou refuse un claim */
+// ── Update claim status (reporter) ──────────────────────────────────────────
 exports.updateClaimStatus = catchAsync(async (req, res) => {
-  const { status } = req.body; // ACCEPTED | REJECTED
+  const { status } = req.body;
 
   const claim = await prisma.claimRequest.findUnique({
     where:   { id: req.params.id },
@@ -89,7 +149,6 @@ exports.updateClaimStatus = catchAsync(async (req, res) => {
     return res.status(404).json({ error: 'Claim not found' });
   }
 
-  // Seul le reporter de l'objet peut mettre à jour le statut
   if (claim.item.reporterId !== req.user.id) {
     return res.status(403).json({ error: 'Forbidden' });
   }
@@ -99,20 +158,16 @@ exports.updateClaimStatus = catchAsync(async (req, res) => {
   }
 
   const updated = await prisma.claimRequest.update({
-    where: { id: req.params.id },
-    data:  { status },
-    include: {
-      item:     { select: { id: true, name: true } },
-      claimant: { select: { id: true, username: true, email: true } },
-    },
+    where:   { id: req.params.id },
+    data:    { status },
+    include: CLAIM_INCLUDE,
   });
 
-  // Notifie le claimant
   await notify.create({
     userId:  claim.claimantId,
     type:    status === 'ACCEPTED' ? 'CLAIM_ACCEPTED' : 'CLAIM_REJECTED',
     message: status === 'ACCEPTED'
-      ? `Your claim for "${claim.item.name}" has been accepted! Please contact the reporter.`
+      ? `Your claim for "${claim.item.name}" has been accepted!`
       : `Your claim for "${claim.item.name}" was not accepted.`,
     itemId:  claim.itemId,
     claimId: claim.id,
@@ -121,7 +176,7 @@ exports.updateClaimStatus = catchAsync(async (req, res) => {
   res.json({ claim: updated });
 });
 
-/** DELETE /api/claims/:id — retrait d'un claim par son auteur */
+// ── Delete a claim (claimant only) ───────────────────────────────────────────
 exports.deleteClaim = catchAsync(async (req, res) => {
   const claim = await prisma.claimRequest.findUnique({ where: { id: req.params.id } });
 
