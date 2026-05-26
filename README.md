@@ -1,5 +1,7 @@
 # Portail de Gestion des Objets Perdus et Trouvés — Campus
 
+[![CI](https://github.com/machiavels/campus-lost-found/actions/workflows/backend-tests.yml/badge.svg)](https://github.com/machiavels/campus-lost-found/actions/workflows/backend-tests.yml)
+
 Ce projet constitue une application web complète (*full-stack*) destinée à la gestion centralisée des objets perdus et trouvés au sein d'un campus universitaire. Il permet aux membres de la communauté académique de déclarer des objets égarés ou découverts, d'effectuer des recherches ciblées et d'engager une procédure de réclamation, le tout au travers d'une interface sécurisée et conforme aux exigences réglementaires en vigueur (RGPD, WCAG).
 
 ---
