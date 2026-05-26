@@ -90,3 +90,24 @@ exports.deleteItem = catchAsync(async (req, res) => {
   await prisma.item.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
+
+// ── Close item ────────────────────────────────────────────────────────────────
+// PATCH /api/items/:id/close — marks the item as CLAIMED (owner only)
+exports.closeItem = catchAsync(async (req, res) => {
+  const existing = await prisma.item.findUnique({ where: { id: req.params.id } });
+  if (!existing) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  const isAdmin = req.user.role === 'ADMIN';
+  if (!isAdmin && existing.reporterId !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const item = await prisma.item.update({
+    where: { id: req.params.id },
+    data:  { status: 'CLAIMED' },
+    include: ITEM_INCLUDE_FULL,
+  });
+  res.json({ item });
+});
