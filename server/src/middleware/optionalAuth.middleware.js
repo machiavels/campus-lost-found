@@ -24,7 +24,7 @@ async function optionalAuth(req, _res, next) {
     if (user && user.status !== 'INACTIVE') {
       req.user = user;
     }
-  } catch (_err) {
+  } catch {
     // invalid / expired token — treat as unauthenticated, don't block
   }
 
