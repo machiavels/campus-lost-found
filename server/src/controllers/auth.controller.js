@@ -33,7 +33,8 @@ exports.register = catchAsync(async (req, res) => {
     select: { id: true, username: true, email: true, role: true, createdAt: true },
   });
 
-  const token = authService.signToken(user.id);
+  // generateAccessToken inclut email + role dans le payload (contrairement à l'ancienne signToken)
+  const token = authService.generateAccessToken(user);
   res.status(201).json({ user, token });
 });
 

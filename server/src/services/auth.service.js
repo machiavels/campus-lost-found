@@ -4,13 +4,13 @@ const crypto  = require('crypto');
 const Joi     = require('joi');
 const prisma  = require('../config/prisma');
 
-// ── Campus email domain whitelist (from .env) ─────────────────────────────────
+// ── Campus email domain whitelist (from .env) ──────────────────────────────────
 const getAllowedDomains = () =>
   (process.env.ALLOWED_EMAIL_DOMAINS || 'eleve.isep.fr,isep.fr')
     .split(',')
     .map(d => d.trim());
 
-// ── Joi validation schemas ────────────────────────────────────────────────────
+// ── Joi validation schemas ────────────────────────────────────────────
 
 exports.registerSchema = Joi.object({
   username: Joi.string().pattern(/^[a-zA-Z0-9_]+$/).min(3).max(30).required().messages({
@@ -61,14 +61,13 @@ exports.validateEmailDomain = (email) => {
   }
 };
 
-// ── Password helpers ──────────────────────────────────────────────────────────
+// ── Password helpers ──────────────────────────────────────────────────────
 exports.hashPassword   = (plain) => bcrypt.hash(plain, 12);
 exports.verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 
 // ── JWT — Access token (15 min) ───────────────────────────────────────────────
-exports.signToken = (userId) =>
-  jwt.sign({ sub: userId }, process.env.JWT_SECRET, { expiresIn: '15m' });
-
+// signToken() a été supprimé (payload minimal sans email/role — voir #41).
+// Utiliser generateAccessToken(user) pour tous les nouveaux appels.
 exports.generateAccessToken = (user) =>
   jwt.sign(
     { sub: user.id, email: user.email, role: user.role },
