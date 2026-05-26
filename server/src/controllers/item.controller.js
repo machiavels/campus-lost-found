@@ -1,14 +1,11 @@
 const prisma = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
-const { parsePagination, buildMeta } = require('../utils/pagination');
-
-const ITEM_INCLUDE = {
-  reporter:  { select: { id: true, username: true } },
-  location:  true,
-  category:  true,
-  photos:    true,
-  _count:    { select: { claimRequests: true, messages: true } },
-};
+const {
+  buildItemWhere,
+  findItems,
+  parsePagination,
+  ITEM_INCLUDE_FULL,
+} = require('../services/item.service');
 
 /**
  * GET /api/items
@@ -20,56 +17,12 @@ const ITEM_INCLUDE = {
  *   - Public/anon     → VERIFIED only
  */
 exports.listItems = catchAsync(async (req, res) => {
-  const {
-    keyword, type, status, categoryId, locationId,
-    from, to,
-  } = req.query;
+  const pagination = parsePagination(req.query);
+  const where      = buildItemWhere(req.query, req.user);
 
-  const { page, limit, skip } = parsePagination(req.query);
+  const { items, meta } = await findItems(where, pagination, ITEM_INCLUDE_FULL);
 
-  const where = {};
-
-  if (req.user?.role === 'ADMIN') {
-    if (status) where.status = status;
-  } else if (req.user) {
-    where.OR = [
-      { status: 'VERIFIED' },
-      { reporterId: req.user.id },
-    ];
-  } else {
-    where.status = 'VERIFIED';
-  }
-
-  if (type)       where.reportType = type;
-  if (categoryId) where.categoryId = categoryId;
-  if (locationId) where.locationId = locationId;
-
-  if (keyword) {
-    where.OR = [
-      ...(where.OR ?? []),
-      { name:        { contains: keyword, mode: 'insensitive' } },
-      { description: { contains: keyword, mode: 'insensitive' } },
-    ];
-  }
-
-  if (from || to) {
-    where.dateLostFound = {};
-    if (from) where.dateLostFound.gte = new Date(from);
-    if (to)   where.dateLostFound.lte = new Date(to);
-  }
-
-  const [total, items] = await Promise.all([
-    prisma.item.count({ where }),
-    prisma.item.findMany({
-      where,
-      include: ITEM_INCLUDE,
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit,
-    }),
-  ]);
-
-  res.json({ items, meta: buildMeta(total, page, limit) });
+  res.json({ items, meta });
 });
 
 /**
@@ -78,7 +31,7 @@ exports.listItems = catchAsync(async (req, res) => {
 exports.getItem = catchAsync(async (req, res) => {
   const item = await prisma.item.findUnique({
     where:   { id: req.params.id },
-    include: ITEM_INCLUDE,
+    include: ITEM_INCLUDE_FULL,
   });
 
   if (!item) return res.status(404).json({ error: 'Item not found' });
@@ -108,7 +61,7 @@ exports.createItem = catchAsync(async (req, res) => {
         ? { create: req.files.map(f => ({ url: `/uploads/${f.filename}` })) }
         : undefined,
     },
-    include: ITEM_INCLUDE,
+    include: ITEM_INCLUDE_FULL,
   });
 
   res.status(201).json({ item });
@@ -130,7 +83,7 @@ exports.updateItem = catchAsync(async (req, res) => {
     data: { name, description, locationId, categoryId,
             dateLostFound: dateLostFound ? new Date(dateLostFound) : undefined,
             status: 'PENDING' },
-    include: ITEM_INCLUDE,
+    include: ITEM_INCLUDE_FULL,
   });
   res.json({ item: updated });
 });
@@ -159,7 +112,7 @@ exports.closeItem = catchAsync(async (req, res) => {
   const updated = await prisma.item.update({
     where: { id: req.params.id },
     data:  { status: 'CLAIMED', claimedById: req.user.id, claimedAt: new Date() },
-    include: ITEM_INCLUDE,
+    include: ITEM_INCLUDE_FULL,
   });
   res.json({ item: updated });
 });
