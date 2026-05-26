@@ -100,8 +100,12 @@ const allowedOrigins = (process.env.CLIENT_ORIGIN || '')
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (!origin) {
+        return callback(null, true);
+      }
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
       return callback(null, false);
     },
     credentials: true,
@@ -141,7 +145,7 @@ app.use(errorHandler);
 // ── Start server only when run directly (not when required by tests) ──────────────────
 if (require.main === module) {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => console.log(`\uD83D\uDE80  Server running on http://localhost:${PORT}`));
+  app.listen(PORT, () => console.info(`🚀  Server running on http://localhost:${PORT}`));
 }
 
 module.exports = app;

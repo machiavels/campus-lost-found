@@ -3,105 +3,105 @@ const { parsePagination, buildMeta } = require('../utils/pagination');
 
 // ── Shared include presets ────────────────────────────────────────────────────
 
-/** Full include used by authenticated / admin responses (item routes). */
-const ITEM_INCLUDE_FULL = {
-  reporter: { select: { id: true, username: true } },
-  location: true,
+/**
+ * Full include: used for authenticated/admin responses.
+ * Includes reporter info, category, location, photos, and counts.
+ */
+exports.ITEM_INCLUDE_FULL = {
+  reporter: { select: { id: true, username: true, email: true } },
   category: true,
-  photos:   true,
-  _count:   { select: { claimRequests: true, messages: true } },
-};
-
-/** Public include: same as full but without _count (search route). */
-const ITEM_INCLUDE_PUBLIC = {
-  reporter: { select: { id: true, username: true } },
   location: true,
-  category: true,
   photos:   true,
+  _count:   { select: { claimRequests: true } },
 };
-
-exports.ITEM_INCLUDE_FULL   = ITEM_INCLUDE_FULL;
-exports.ITEM_INCLUDE_PUBLIC = ITEM_INCLUDE_PUBLIC;
-
-// ── buildItemWhere ────────────────────────────────────────────────────────────
 
 /**
- * Build the Prisma `where` clause for item listings and searches.
- *
- * Visibility rules (applied automatically when `user` is provided):
- *   ADMIN         → any status (caller may further filter with `status`)
- *   Authenticated → VERIFIED items + own items (any status)
- *   Anonymous     → VERIFIED only
- *
- * @param {object} filters
- * @param {string} [filters.keyword]    - full-text search on name / description
- * @param {string} [filters.q]          - alias for keyword (search route uses ?q=)
- * @param {string} [filters.type]       - LOST | FOUND
- * @param {string} [filters.status]     - admin-only status filter
- * @param {string} [filters.categoryId]
- * @param {string} [filters.locationId]
- * @param {string} [filters.from]       - ISO date, lower bound on dateLostFound
- * @param {string} [filters.to]         - ISO date, upper bound on dateLostFound
- * @param {object} [user]               - req.user (may be undefined for anon)
- * @returns {object} Prisma where object
+ * Public include: strips sensitive fields for unauthenticated responses.
  */
-exports.buildItemWhere = (filters = {}, user) => {
-  const {
-    keyword, q, type, status,
-    categoryId, locationId, from, to,
-  } = filters;
+exports.ITEM_INCLUDE_PUBLIC = {
+  category: true,
+  location: true,
+  photos:   true,
+};
 
-  const searchTerm = keyword || q;
-  const where = {};
+// ── Pagination helper (re-exported from pagination utils) ─────────────────────
+exports.parsePagination = parsePagination;
+exports.buildMeta       = buildMeta;
 
-  // ── Visibility ────────────────────────────────────────────────────────────
-  if (user?.role === 'ADMIN') {
-    if (status) where.status = status;
-  } else if (user) {
+// ── Where-clause builder ──────────────────────────────────────────────────────
+
+/**
+ * Builds a Prisma `where` clause from query-string parameters.
+ *
+ * Supported params:
+ *   keyword / q  — full-text search on name + description
+ *   type         — LOST | FOUND
+ *   categoryId   — UUID
+ *   locationId   — UUID
+ *   from / to    — ISO date range for dateLostFound
+ *   status       — admin only: PENDING | VERIFIED | REJECTED
+ *
+ * @param {object} query  — req.query
+ * @param {object} user   — req.user (may be undefined for public requests)
+ * @returns {object}      Prisma where clause
+ */
+exports.buildItemWhere = function buildItemWhere(query, user) {
+  const isAdmin = user?.role === 'ADMIN';
+
+  // Default visibility: only show VERIFIED items to the public
+  const where = {
+    status: isAdmin ? undefined : 'VERIFIED',
+  };
+
+  // Allow admin to filter by status explicitly
+  if (isAdmin && query.status) {
+    where.status = query.status;
+  }
+
+  // Keyword search (supports both ?keyword= and ?q= aliases)
+  const keyword = query.keyword || query.q;
+  if (keyword) {
     where.OR = [
-      { status: 'VERIFIED' },
-      { reporterId: user.id },
+      { name:        { contains: keyword, mode: 'insensitive' } },
+      { description: { contains: keyword, mode: 'insensitive' } },
     ];
-  } else {
-    where.status = 'VERIFIED';
   }
 
-  // ── Scalar filters ────────────────────────────────────────────────────────
-  if (type)       where.reportType = type;
-  if (categoryId) where.categoryId = categoryId;
-  if (locationId) where.locationId = locationId;
-
-  // ── Full-text search ──────────────────────────────────────────────────────
-  if (searchTerm) {
-    const textFilter = [
-      { name:        { contains: searchTerm, mode: 'insensitive' } },
-      { description: { contains: searchTerm, mode: 'insensitive' } },
-    ];
-    // Merge with existing OR (visibility) if present
-    where.OR = [...(where.OR ?? []), ...textFilter];
+  if (query.type) {
+    where.reportType = query.type;
+  }
+  if (query.categoryId) {
+    where.categoryId = query.categoryId;
+  }
+  if (query.locationId) {
+    where.locationId = query.locationId;
   }
 
-  // ── Date range ────────────────────────────────────────────────────────────
-  if (from || to) {
+  // Date range
+  if (query.from || query.to) {
     where.dateLostFound = {};
-    if (from) where.dateLostFound.gte = new Date(from);
-    if (to)   where.dateLostFound.lte = new Date(to);
+    if (query.from) {
+      where.dateLostFound.gte = new Date(query.from);
+    }
+    if (query.to) {
+      where.dateLostFound.lte = new Date(query.to);
+    }
   }
 
   return where;
 };
 
-// ── findItems ─────────────────────────────────────────────────────────────────
+// ── Query runner ──────────────────────────────────────────────────────────────
 
 /**
- * Execute a paginated Prisma query for items.
+ * Fetches items with pagination and include.
  *
- * @param {object} where       - Prisma where clause (from buildItemWhere)
- * @param {object} pagination  - { page, limit, skip } from parsePagination
- * @param {object} include     - Prisma include preset
+ * @param {object} where      — Prisma where clause
+ * @param {object} pagination — { page, limit, skip }
+ * @param {object} include    — Prisma include clause
  * @returns {{ items: object[], meta: object }}
  */
-exports.findItems = async (where, pagination, include) => {
+exports.findItems = async function findItems(where, pagination, include) {
   const { page, limit, skip } = pagination;
 
   const [total, items] = await Promise.all([
@@ -117,6 +117,3 @@ exports.findItems = async (where, pagination, include) => {
 
   return { items, meta: buildMeta(total, page, limit) };
 };
-
-// ── parsePagination re-export (convenience) ───────────────────────────────────
-exports.parsePagination = parsePagination;

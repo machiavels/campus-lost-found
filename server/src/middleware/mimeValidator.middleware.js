@@ -15,8 +15,7 @@
  * No external dependencies required — pure Node.js Buffer comparison.
  */
 
-const fs   = require('fs');
-const path = require('path');
+const fs = require('fs');
 
 // Magic-byte signatures for allowed image types
 const MAGIC_SIGNATURES = [
@@ -47,7 +46,6 @@ const MAGIC_SIGNATURES = [
  * @returns {string|null}   detected MIME type, or null if unknown
  */
 function detectMime(filePath) {
-  // Read only the first 12 bytes
   let buf;
   try {
     const fd = fs.openSync(filePath, 'r');
@@ -59,7 +57,7 @@ function detectMime(filePath) {
   }
 
   for (const sig of MAGIC_SIGNATURES) {
-    if (sig.check(buf)) return sig.mime;
+    if (sig.check(buf)) { return sig.mime; }
   }
   return null;
 }
@@ -69,7 +67,7 @@ function detectMime(filePath) {
  * @param {Express.Multer.File[]} files
  */
 function cleanupFiles(files) {
-  if (!files || files.length === 0) return;
+  if (!files || files.length === 0) { return; }
   for (const file of files) {
     fs.unlink(file.path, () => {});
   }
@@ -84,8 +82,7 @@ function cleanupFiles(files) {
 function validateMime(req, res, next) {
   const files = req.files || (req.file ? [req.file] : []);
 
-  // No files — let the controller handle the empty-upload case
-  if (files.length === 0) return next();
+  if (files.length === 0) { return next(); }
 
   const invalidFiles = [];
 
@@ -97,7 +94,6 @@ function validateMime(req, res, next) {
   }
 
   if (invalidFiles.length > 0) {
-    // Delete ALL files for this request before rejecting
     cleanupFiles(files);
     return res.status(400).json({
       error: 'Invalid file type',

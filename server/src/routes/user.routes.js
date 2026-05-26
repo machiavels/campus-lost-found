@@ -1,7 +1,6 @@
 const router   = require('express').Router();
 const ctrl     = require('../controllers/user.controller');
-const { authenticate }       = require('../middleware/auth.middleware');
-const { optionalAuthenticate } = require('../middleware/auth.middleware');
+const { authenticate } = require('../middleware/auth.middleware');
 const validate               = require('../middleware/validate.middleware');
 const { updateMeSchema, changePasswordSchema } = require('../middleware/validators/user.validator');
 

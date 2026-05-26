@@ -139,7 +139,9 @@ exports.getUserDetail = catchAsync(async (req, res) => {
     },
   });
 
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
 
   res.json({ user });
 });
@@ -155,16 +157,22 @@ exports.updateUser = catchAsync(async (req, res) => {
   }
 
   const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'User not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'User not found' });
+  }
 
   if (username && username !== existing.username) {
     const taken = await prisma.user.findFirst({ where: { username, NOT: { id: req.params.id } } });
-    if (taken) return res.status(409).json({ error: 'Username already taken' });
+    if (taken) {
+      return res.status(409).json({ error: 'Username already taken' });
+    }
   }
 
   if (email && email !== existing.email) {
     const taken = await prisma.user.findFirst({ where: { email, NOT: { id: req.params.id } } });
-    if (taken) return res.status(409).json({ error: 'Email already taken' });
+    if (taken) {
+      return res.status(409).json({ error: 'Email already taken' });
+    }
   }
 
   const updated = await prisma.user.update({
@@ -190,7 +198,9 @@ exports.setUserStatus = catchAsync(async (req, res) => {
   }
 
   const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'User not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'User not found' });
+  }
 
   if (req.user.id === req.params.id && status === 'INACTIVE') {
     return res.status(403).json({ error: 'You cannot deactivate your own account' });
@@ -210,7 +220,9 @@ exports.setUserStatus = catchAsync(async (req, res) => {
  */
 exports.toggleUserStatus = catchAsync(async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
 
   if (req.user.id === req.params.id && user.status === 'ACTIVE') {
     return res.status(403).json({ error: 'You cannot deactivate your own account' });
@@ -233,7 +245,9 @@ exports.changeUserRole = catchAsync(async (req, res) => {
     return res.status(422).json({ error: 'Invalid role' });
   }
   const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'User not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'User not found' });
+  }
 
   const updated = await prisma.user.update({
     where: { id: req.params.id },
@@ -265,7 +279,9 @@ exports.updateCategory = catchAsync(async (req, res) => {
     return res.status(422).json({ error: 'name cannot be empty' });
   }
   const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Category not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'Category not found' });
+  }
   const cat = await prisma.category.update({
     where: { id: req.params.id },
     data:  { name: name ? name.trim() : undefined, description },
@@ -275,7 +291,9 @@ exports.updateCategory = catchAsync(async (req, res) => {
 
 exports.deleteCategory = catchAsync(async (req, res) => {
   const existing = await prisma.category.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Category not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'Category not found' });
+  }
   await prisma.category.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
@@ -302,7 +320,9 @@ exports.updateLocation = catchAsync(async (req, res) => {
     return res.status(422).json({ error: 'name cannot be empty' });
   }
   const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Location not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'Location not found' });
+  }
   const loc = await prisma.location.update({
     where: { id: req.params.id },
     data:  { name: name ? name.trim() : undefined, description },
@@ -312,7 +332,9 @@ exports.updateLocation = catchAsync(async (req, res) => {
 
 exports.deleteLocation = catchAsync(async (req, res) => {
   const existing = await prisma.location.findUnique({ where: { id: req.params.id } });
-  if (!existing) return res.status(404).json({ error: 'Location not found' });
+  if (!existing) {
+    return res.status(404).json({ error: 'Location not found' });
+  }
   await prisma.location.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });

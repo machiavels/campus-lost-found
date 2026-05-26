@@ -1,51 +1,45 @@
+'use strict';
+
+const prisma = require('../config/prisma');
+
 /**
- * notify.js — centralized utility for creating in-app notifications.
- *
- * After persisting the notification to the DB, it pushes a real-time
- * SSE event to the recipient if they have an active stream connection.
- *
- * Usage:
- *   const notify = require('../services/notify');
- *   await notify({ userId, type, message, itemId });
- *
- * Supported types (NotificationType enum):
- *   ITEM_VERIFIED | ITEM_REJECTED | NEW_MESSAGE | CLAIM_APPROVED | CLAIM_REJECTED
+ * Allowed NotificationType values — must match schema.prisma enum.
+ * Kept as a Set for O(1) lookup.
  */
-
-const prisma      = require('../config/prisma');
-const sseManager  = require('../utils/sseManager');
+const VALID_TYPES = new Set([
+  'ITEM_VERIFIED',
+  'ITEM_REJECTED',
+  'CLAIM_RECEIVED',
+  'CLAIM_ACCEPTED',
+  'CLAIM_REJECTED',
+  'CLAIM_APPROVED',
+  'NEW_MESSAGE',
+  'MESSAGE_RECEIVED',
+]);
 
 /**
- * Create a notification for a user and push it via SSE if connected.
+ * notify.create — persiste une notification en base.
  *
  * @param {object} opts
- * @param {string}  opts.userId  - recipient user ID
- * @param {string}  opts.type    - NotificationType value
- * @param {string}  opts.message - human-readable text
- * @param {string} [opts.itemId] - optional related item ID
- * @returns {Promise<object>} the created Notification record
+ * @param {string}  opts.userId   - recipient user id
+ * @param {string}  opts.type     - NotificationType enum value
+ * @param {string}  opts.message  - human-readable message
+ * @param {string=} opts.itemId   - optional item id
+ * @param {string=} opts.claimId  - optional claim id (ignored by schema, kept for compat)
+ * @returns {Promise<object|null>} created notification, or null if type is unknown
  */
-async function notify({ userId, type, message, itemId = null }) {
-  const notification = await prisma.notification.create({
-    data: { userId, type, message, itemId },
-    select: {
-      id: true,
-      type: true,
-      message: true,
-      read: true,
-      createdAt: true,
-      item: { select: { id: true, name: true } },
-    },
-  });
-
-  // Push SSE event — fire-and-forget, must never throw or block the caller
-  try {
-    sseManager.sendToUser(userId, 'notification', notification);
-  } catch {
-    // SSE push failure is non-critical; notification is already saved in DB
+exports.create = async ({ userId, type, message, itemId = null }) => {
+  if (!VALID_TYPES.has(type)) {
+    console.warn(`[notify] Unknown NotificationType "${type}" — skipping.`);
+    return null;
   }
 
-  return notification;
-}
-
-module.exports = notify;
+  return prisma.notification.create({
+    data: {
+      userId,
+      type,
+      message,
+      itemId: itemId || null,
+    },
+  });
+};

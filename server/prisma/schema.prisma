@@ -1,5 +1,4 @@
 // Prisma schema — Campus Lost & Found
-// 7 entities matching the ER model from the cahier des charges
 
 generator client {
   provider      = "prisma-client-js"
@@ -43,11 +42,17 @@ enum ClaimStatus {
 }
 
 enum NotificationType {
+  // Item lifecycle
   ITEM_VERIFIED
   ITEM_REJECTED
-  NEW_MESSAGE
-  CLAIM_APPROVED
+  // Claims
+  CLAIM_RECEIVED
+  CLAIM_ACCEPTED
   CLAIM_REJECTED
+  CLAIM_APPROVED
+  // Messages
+  NEW_MESSAGE
+  MESSAGE_RECEIVED
 }
 
 // ─── User ────────────────────────────────────────────────────────────────────────────
@@ -59,12 +64,11 @@ model User {
   passwordHash  String
   role          Role        @default(STUDENT)
   status        UserStatus  @default(ACTIVE)
-  avatar        String?                          // issue #26 — optional profile avatar URL
-  bio           String?                          // issue #26 — optional short bio
+  avatar        String?
+  bio           String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  // Relations
   items             Item[]          @relation("reporter")
   moderatedItems    Item[]          @relation("moderator")
   claimedItems      Item[]          @relation("claimedBy")
@@ -81,7 +85,7 @@ model User {
 
 model Location {
   id          String   @id @default(uuid())
-  name        String   @unique // e.g. "Bibliothèque", "Cafétéria"
+  name        String   @unique
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -95,7 +99,7 @@ model Location {
 
 model Category {
   id          String   @id @default(uuid())
-  name        String   @unique // e.g. "Électronique", "Livres", "Vêtements"
+  name        String   @unique
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -118,14 +122,12 @@ model Item {
   moderationNote   String?
   claimedAt        DateTime?
 
-  // Foreign keys
   reporterId       String
   locationId       String
   categoryId       String
   moderatorId      String?
   claimedById      String?
 
-  // Relations
   reporter         User           @relation("reporter",  fields: [reporterId],   references: [id])
   location         Location       @relation(fields: [locationId],  references: [id])
   category         Category       @relation(fields: [categoryId],  references: [id])
@@ -162,34 +164,37 @@ model Photo {
 // ─── Message ────────────────────────────────────────────────────────────────────────
 
 model Message {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   senderId    String
   recipientId String
-  itemId      String
+  itemId      String?   // optional — a message may exist without an item
   content     String
-  sentAt      DateTime @default(now())
+  sentAt      DateTime  @default(now())
   readAt      DateTime?
 
-  sender      User     @relation("sender",    fields: [senderId],    references: [id])
-  recipient   User     @relation("recipient", fields: [recipientId], references: [id])
-  item        Item     @relation(fields: [itemId],      references: [id], onDelete: Cascade)
+  sender      User      @relation("sender",    fields: [senderId],    references: [id])
+  recipient   User      @relation("recipient", fields: [recipientId], references: [id])
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@map("messages")
 }
 
 // ─── ClaimRequest ───────────────────────────────────────────────────────────────────
+// Field names aligned with controllers and tests:
+//   claimantId   (was: requesterId)
+//   message      (was: requestMessage)
 
 model ClaimRequest {
-  id             String      @id @default(uuid())
-  itemId         String
-  requesterId    String
-  requestMessage String
-  status         ClaimStatus @default(PENDING)
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id          String      @id @default(uuid())
+  itemId      String
+  claimantId  String
+  message     String?
+  status      ClaimStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
-  item           Item        @relation(fields: [itemId],      references: [id], onDelete: Cascade)
-  requester      User        @relation(fields: [requesterId], references: [id])
+  item        Item        @relation(fields: [itemId],     references: [id], onDelete: Cascade)
+  claimant    User        @relation(fields: [claimantId], references: [id])
 
   @@map("claim_requests")
 }
@@ -211,7 +216,7 @@ model Notification {
   @@map("notifications")
 }
 
-// ─── RefreshToken — issue #23 ──────────────────────────────────────────────────────────
+// ─── RefreshToken ──────────────────────────────────────────────────────────────────────
 
 model RefreshToken {
   id        String   @id @default(uuid())

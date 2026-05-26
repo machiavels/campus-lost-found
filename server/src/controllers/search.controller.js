@@ -21,10 +21,10 @@ exports.searchItems = catchAsync(async (req, res) => {
   const include = isAdmin ? ITEM_INCLUDE_FULL : ITEM_INCLUDE_PUBLIC;
   const { items, meta } = await findItems(where, pagination, include);
 
-  // Strip _count from public results
+  // Strip _count from public results (_count is intentionally unused via destructuring)
   const results = isAdmin
     ? items
-    : items.map(({ _count, ...rest }) => rest); // eslint-disable-line no-unused-vars
+    : items.map(({ _count: _unusedCount, ...rest }) => rest);
 
   res.json({ results, meta });
 });

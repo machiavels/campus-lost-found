@@ -1,4 +1,4 @@
-name: Backend Tests
+name: CI
 
 on:
   push:
@@ -10,11 +10,39 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - '.github/workflows/backend-tests.yml'
+
+# Cancel in-progress runs for the same branch on new push
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          # Cache activé uniquement si package-lock.json est présent
+          # (il n'est pas encore commité — retirer cette ligne une fois qu'il le sera)
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm install
+
+      - name: Run ESLint
+        working-directory: server
+        run: npx eslint src/ --ext .js --max-warnings 0
+
   test:
     name: Jest + Supertest (Node 20)
     runs-on: ubuntu-latest
+    needs: lint
 
     services:
       postgres:
@@ -44,17 +72,14 @@ jobs:
       MAX_FILE_SIZE_MB: 5
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          # Pas de cache ici car package-lock.json n'est pas commité
-          # Le cache sera actif dès qu'un package-lock.json sera présent
 
-      - name: Install dependencies (generates package-lock.json)
+      - name: Install dependencies
         working-directory: server
         run: npm install
 
@@ -62,11 +87,11 @@ jobs:
         working-directory: server
         run: npx prisma generate
 
-      - name: Push schema to database (creates all tables from schema.prisma)
+      - name: Push schema to database
         working-directory: server
         run: npx prisma db push --accept-data-loss
 
-      - name: Seed reference data (categories & locations)
+      - name: Seed reference data
         working-directory: server
         run: node prisma/seed.js
 
@@ -80,4 +105,23 @@ jobs:
         with:
           name: coverage-report
           path: server/coverage/
-          retention-days: 7
+          retention-days: 14
+
+      - name: Coverage summary
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = 'server/coverage/coverage-summary.json';
+            if (!fs.existsSync(summaryPath)) return;
+            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+            const total = summary.total;
+            const pct = (key) => total[key].pct;
+            await core.summary
+              .addHeading('Coverage Summary')
+              .addTable([
+                [{data: 'Statements', header: true}, {data: 'Branches', header: true}, {data: 'Functions', header: true}, {data: 'Lines', header: true}],
+                [`${pct('statements')}%`, `${pct('branches')}%`, `${pct('functions')}%`, `${pct('lines')}%`]
+              ])
+              .write();
