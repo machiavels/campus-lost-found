@@ -3,160 +3,132 @@ const { catchAsync } = require('../middleware/error.middleware');
 const notify  = require('../services/notify');
 
 /** POST /api/claims
- *  Body: { itemId, requestMessage }
+ *  Body: { itemId, message? }
  */
-exports.submitClaim = catchAsync(async (req, res) => {
-  const { itemId, requestMessage } = req.body;
-  if (!itemId || !requestMessage) {
-    return res.status(422).json({ error: 'itemId and requestMessage are required' });
-  }
+exports.createClaim = catchAsync(async (req, res) => {
+  const { itemId, message } = req.body;
 
-  // Only allow claims on VERIFIED items
+  // 1. L'objet doit exister et être VERIFIED
   const item = await prisma.item.findUnique({ where: { id: itemId } });
-  if (!item) return res.status(404).json({ error: 'Item not found' });
-  if (item.status !== 'VERIFIED') {
-    return res.status(409).json({ error: 'Claims can only be submitted on verified items' });
+  if (!item || item.status !== 'VERIFIED') {
+    return res.status(404).json({ error: 'Item not found or not available for claiming' });
   }
 
-  // Prevent duplicate pending claims from the same user
+  // 2. L'utilisateur ne peut pas réclamer son propre objet
+  if (item.reporterId === req.user.id) {
+    return res.status(403).json({ error: 'You cannot claim your own item' });
+  }
+
+  // 3. Évite les doublons
   const existing = await prisma.claimRequest.findFirst({
-    where: { itemId, requesterId: req.user.id, status: 'PENDING' },
+    where: { itemId, claimantId: req.user.id },
   });
   if (existing) {
     return res.status(409).json({ error: 'You already have a pending claim for this item' });
   }
 
   const claim = await prisma.claimRequest.create({
-    data: { itemId, requesterId: req.user.id, requestMessage },
-    include: {
-      item:      { select: { id: true, name: true, status: true } },
-      requester: { select: { id: true, username: true, email: true } },
+    data: {
+      itemId,
+      claimantId: req.user.id,
+      message:    message ?? null,
     },
+    include: {
+      item:     { select: { id: true, name: true, status: true } },
+      claimant: { select: { id: true, username: true, email: true } },
+    },
+  });
+
+  // Notifie le déclarant
+  await notify.create({
+    userId:  item.reporterId,
+    type:    'CLAIM_RECEIVED',
+    message: `${req.user.username} has submitted a claim for your item "${item.name}".`,
+    itemId,
+    claimId: claim.id,
   });
 
   res.status(201).json({ claim });
 });
 
-/** GET /api/claims
- *  - ADMIN: returns all claims (filterable by ?status=PENDING|APPROVED|REJECTED)
- *  - User : returns only their own claims
- */
-exports.listClaims = catchAsync(async (req, res) => {
-  const { status, page = 1, limit = 20 } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-
-  const where = {};
-  if (req.user.role !== 'ADMIN') {
-    where.requesterId = req.user.id;
-  }
-  if (status) {
-    where.status = status.toUpperCase();
-  }
-
-  const [claims, total] = await prisma.$transaction([
-    prisma.claimRequest.findMany({
-      where,
-      include: {
-        item:      { select: { id: true, name: true, status: true, reportType: true } },
-        requester: { select: { id: true, username: true, email: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: parseInt(limit),
-    }),
-    prisma.claimRequest.count({ where }),
-  ]);
-
-  res.json({
-    claims,
-    meta: {
-      total,
-      page:       parseInt(page),
-      limit:      parseInt(limit),
-      totalPages: Math.ceil(total / parseInt(limit)),
-    },
-  });
-});
-
-/** GET /api/claims/my — alias: current user's claims only */
-exports.myClaims = catchAsync(async (req, res) => {
+/** GET /api/claims — liste des claims de l'utilisateur connecté */
+exports.listMyClaims = catchAsync(async (req, res) => {
   const claims = await prisma.claimRequest.findMany({
-    where:   { requesterId: req.user.id },
-    include: { item: { select: { id: true, name: true, status: true } } },
+    where:   { claimantId: req.user.id },
+    include: { item: { select: { id: true, name: true, status: true, reportType: true } } },
     orderBy: { createdAt: 'desc' },
   });
   res.json({ claims });
 });
 
-/** PATCH /api/claims/:id/review — ADMIN
- *  Body: { action: 'APPROVED' | 'REJECTED' }
- */
-exports.reviewClaim = catchAsync(async (req, res) => {
-  const { action } = req.body;
-  if (!['APPROVED', 'REJECTED'].includes(action)) {
-    return res.status(422).json({ error: 'action must be APPROVED or REJECTED' });
+/** GET /api/items/:id/claims — claims sur un item (reporter uniquement) */
+exports.listItemClaims = catchAsync(async (req, res) => {
+  const item = await prisma.item.findUnique({ where: { id: req.params.id } });
+  if (!item || item.reporterId !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
-  await _setClaimStatus(req.params.id, action, res);
-});
 
-/** PATCH /api/claims/:id/approve — ADMIN (legacy) */
-exports.approveClaim = catchAsync(async (req, res) => {
-  await _setClaimStatus(req.params.id, 'APPROVED', res);
-});
-
-/** PATCH /api/claims/:id/reject — ADMIN (legacy) */
-exports.rejectClaim = catchAsync(async (req, res) => {
-  await _setClaimStatus(req.params.id, 'REJECTED', res);
-});
-
-// ─── Internal helper ─────────────────────────────────────────────────────────
-
-async function _setClaimStatus(id, status, res) {
-  const claim = await prisma.claimRequest.findUnique({
-    where:   { id },
-    include: {
-      item:      { select: { id: true, name: true, status: true } },
-      requester: { select: { id: true, username: true, email: true } },
-    },
+  const claims = await prisma.claimRequest.findMany({
+    where:   { itemId: req.params.id },
+    include: { claimant: { select: { id: true, username: true, email: true } } },
+    orderBy: { createdAt: 'desc' },
   });
-  if (!claim) return res.status(404).json({ error: 'Claim not found' });
-  if (claim.status !== 'PENDING') {
-    return res.status(409).json({ error: `Claim has already been ${claim.status.toLowerCase()}` });
+  res.json({ claims });
+});
+
+/** PATCH /api/claims/:id — accepte ou refuse un claim */
+exports.updateClaimStatus = catchAsync(async (req, res) => {
+  const { status } = req.body; // ACCEPTED | REJECTED
+
+  const claim = await prisma.claimRequest.findUnique({
+    where:   { id: req.params.id },
+    include: { item: true },
+  });
+
+  if (!claim) {
+    return res.status(404).json({ error: 'Claim not found' });
+  }
+
+  // Seul le reporter de l'objet peut mettre à jour le statut
+  if (claim.item.reporterId !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (!['ACCEPTED', 'REJECTED'].includes(status)) {
+    return res.status(422).json({ error: 'status must be ACCEPTED or REJECTED' });
   }
 
   const updated = await prisma.claimRequest.update({
-    where:   { id },
-    data:    { status },
+    where: { id: req.params.id },
+    data:  { status },
     include: {
-      item:      { select: { id: true, name: true, status: true } },
-      requester: { select: { id: true, username: true, email: true } },
+      item:     { select: { id: true, name: true } },
+      claimant: { select: { id: true, username: true, email: true } },
     },
   });
 
-  // If approved → mark item as CLAIMED and reject all other pending claims for it
-  if (status === 'APPROVED') {
-    await prisma.$transaction([
-      prisma.item.update({
-        where: { id: claim.itemId },
-        data:  { status: 'CLAIMED', claimedById: claim.requesterId, claimedAt: new Date() },
-      }),
-      // Auto-reject sibling pending claims
-      prisma.claimRequest.updateMany({
-        where: { itemId: claim.itemId, status: 'PENDING', id: { not: id } },
-        data:  { status: 'REJECTED' },
-      }),
-    ]);
-  }
-
-  // Notify the requester
-  await notify({
-    userId:  claim.requesterId,
-    type:    status === 'APPROVED' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED',
-    message: status === 'APPROVED'
-      ? `Your claim for "${claim.item.name}" has been approved. You can now pick it up.`
-      : `Your claim for "${claim.item.name}" has been rejected.`,
+  // Notifie le claimant
+  await notify.create({
+    userId:  claim.claimantId,
+    type:    status === 'ACCEPTED' ? 'CLAIM_ACCEPTED' : 'CLAIM_REJECTED',
+    message: status === 'ACCEPTED'
+      ? `Your claim for "${claim.item.name}" has been accepted! Please contact the reporter.`
+      : `Your claim for "${claim.item.name}" was not accepted.`,
     itemId:  claim.itemId,
+    claimId: claim.id,
   });
 
   res.json({ claim: updated });
-}
+});
+
+/** DELETE /api/claims/:id — retrait d'un claim par son auteur */
+exports.deleteClaim = catchAsync(async (req, res) => {
+  const claim = await prisma.claimRequest.findUnique({ where: { id: req.params.id } });
+
+  if (!claim || claim.claimantId !== req.user.id) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  await prisma.claimRequest.delete({ where: { id: req.params.id } });
+  res.status(204).send();
+});

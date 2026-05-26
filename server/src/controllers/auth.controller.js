@@ -6,82 +6,66 @@ const COOKIE_OPTIONS = {
   httpOnly: true,
   secure:   process.env.NODE_ENV === 'production',
   sameSite: 'Strict',
-  maxAge:   7 * 24 * 60 * 60 * 1000, // 7 jours en ms
+  maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
 /**
  * POST /api/auth/register
- * Inscription avec email institutionnel + mot de passe
+ * Body: { username, email, password, role? }
  */
 exports.register = catchAsync(async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, role } = req.body;
 
-  // Vérifie le domaine campus (double sécurité après Joi)
-  authService.validateEmailDomain(email);
-
-  // Unicité email + username
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { username }] },
-  });
-  if (existing) {
-    return res.status(409).json({ error: 'Email ou nom d\'utilisateur déjà utilisé' });
-  }
-
-  const passwordHash = await authService.hashPassword(password);
-  const user = await prisma.user.create({
-    data: { username, email, passwordHash },
-    select: { id: true, username: true, email: true, role: true, createdAt: true },
+  const { user, accessToken, refreshToken } = await authService.register({
+    username,
+    email,
+    password,
+    role,
   });
 
-  // generateAccessToken inclut email + role dans le payload (contrairement à l'ancienne signToken)
-  const token = authService.generateAccessToken(user);
-  res.status(201).json({ user, token });
+  res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
+  res.status(201).json({
+    user: {
+      id:       user.id,
+      username: user.username,
+      email:    user.email,
+      role:     user.role,
+    },
+    accessToken,
+  });
 });
 
 /**
  * POST /api/auth/login
- * Authentification par email + mot de passe
- * Retourne un access token (15min) + pose un refresh token en cookie HttpOnly
+ * Body: { email, password }
  */
 exports.login = catchAsync(async (req, res) => {
   const { email, password } = req.body;
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    return res.status(401).json({ error: 'Identifiants invalides' });
-  }
-  if (user.status === 'INACTIVE') {
-    return res.status(403).json({ error: 'Compte désactivé' });
-  }
-
-  const valid = await authService.verifyPassword(password, user.passwordHash);
-  if (!valid) {
-    return res.status(401).json({ error: 'Identifiants invalides' });
-  }
-
-  const accessToken  = authService.generateAccessToken(user);
-  const refreshToken = await authService.generateRefreshToken(user.id);
+  const { user, accessToken, refreshToken } = await authService.login(email, password);
 
   res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
-
-  const { passwordHash: _, ...safeUser } = user;
-  // token conservé pour la rétro-compatibilité des tests existants
-  res.json({ user: safeUser, token: accessToken, accessToken });
+  res.json({
+    user: {
+      id:       user.id,
+      username: user.username,
+      email:    user.email,
+      role:     user.role,
+    },
+    accessToken,
+  });
 });
 
 /**
  * POST /api/auth/refresh
- * Échange un refresh token valide contre un nouvel access token + refresh token rotatif
+ * Lit le cookie refreshToken, retourne un nouvel accessToken
  */
 exports.refresh = catchAsync(async (req, res) => {
   const token = req.cookies?.refreshToken;
-  if (!token) {
-    return res.status(401).json({ error: 'Refresh token manquant' });
-  }
 
-  const { accessToken, refreshToken } = await authService.rotateRefreshToken(token);
+  const { accessToken, refreshToken: newRefresh } = await authService.rotateRefreshToken(token);
 
-  res.cookie('refreshToken', refreshToken, COOKIE_OPTIONS);
+  res.cookie('refreshToken', newRefresh, COOKIE_OPTIONS);
   res.json({ accessToken });
 });
 
@@ -91,7 +75,9 @@ exports.refresh = catchAsync(async (req, res) => {
  */
 exports.logout = catchAsync(async (req, res) => {
   const token = req.cookies?.refreshToken;
-  if (token) await authService.revokeRefreshToken(token);
+  if (token) {
+    await authService.revokeRefreshToken(token);
+  }
 
   res.clearCookie('refreshToken', { httpOnly: true, sameSite: 'Strict' });
   res.status(204).send();
@@ -99,9 +85,12 @@ exports.logout = catchAsync(async (req, res) => {
 
 /**
  * GET /api/auth/me
- * Retourne le profil de l'utilisateur authentifié (sans le hash)
+ * Retourne le profil de l'utilisateur connecté
  */
 exports.me = catchAsync(async (req, res) => {
-  const { passwordHash: _, ...safeUser } = req.user;
-  res.json({ user: safeUser });
+  const user = await prisma.user.findUnique({
+    where:  { id: req.user.id },
+    select: { id: true, username: true, email: true, role: true, createdAt: true },
+  });
+  res.json({ user });
 });

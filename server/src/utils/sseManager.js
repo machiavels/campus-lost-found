@@ -4,11 +4,11 @@
  * Usage:
  *   const sseManager = require('../utils/sseManager');
  *   sseManager.addClient(userId, res);
- *   sseManager.sendToUser(userId, eventName, data);
+ *   sseManager.sendToUser(userId, 'notification', { message: 'Hello!' });
  *   sseManager.removeClient(userId, res);
  */
 
-/** @type {Map<string, Set<import('express').Response>>} */
+// Map<userId, Set<res>>
 const clients = new Map();
 
 /**
@@ -30,7 +30,9 @@ function addClient(userId, res) {
  */
 function removeClient(userId, res) {
   const set = clients.get(userId);
-  if (!set) return;
+  if (!set) {
+    return;
+  }
   set.delete(res);
   if (set.size === 0) {
     clients.delete(userId);
@@ -47,7 +49,9 @@ function removeClient(userId, res) {
  */
 function sendToUser(userId, eventName, data) {
   const set = clients.get(userId);
-  if (!set || set.size === 0) return;
+  if (!set || set.size === 0) {
+    return;
+  }
 
   const payload = `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`;
 
@@ -67,7 +71,9 @@ function sendToUser(userId, eventName, data) {
  */
 function connectionCount() {
   let count = 0;
-  for (const set of clients.values()) count += set.size;
+  for (const set of clients.values()) {
+    count += set.size;
+  }
   return count;
 }
 
