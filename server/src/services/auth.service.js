@@ -50,7 +50,7 @@ exports.loginSchema = Joi.object({
   }),
 });
 
-// ── Campus email domain validator (used in controller) ───────────────────────
+// ── Campus email domain validator ────────────────────────────────────────────
 exports.validateEmailDomain = (email) => {
   const allowed = getAllowedDomains();
   const domain  = email.split('@')[1];
@@ -59,6 +59,26 @@ exports.validateEmailDomain = (email) => {
     err.statusCode = 403;
     throw err;
   }
+};
+
+// ── High-level register (used by controller + easily mockable in tests) ───────
+exports.register = async ({ username, email, password }) => {
+  exports.validateEmailDomain(email);
+
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ email }, { username }] },
+  });
+  if (existing) {
+    const err = new Error("Email ou nom d'utilisateur déjà utilisé");
+    err.statusCode = 409;
+    throw err;
+  }
+
+  const passwordHash = await exports.hashPassword(password);
+  return prisma.user.create({
+    data: { username, email, passwordHash },
+    select: { id: true, username: true, email: true, role: true, createdAt: true },
+  });
 };
 
 // ── Password helpers ──────────────────────────────────────────────────────
