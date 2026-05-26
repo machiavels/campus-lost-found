@@ -68,4 +68,35 @@ function requireOwnerOrAdmin(getOwnerId) {
   };
 }
 
-module.exports = { authenticate, requireRole, requireOwnerOrAdmin };
+/**
+ * optionalAuth — tries to authenticate the request but never blocks it.
+ * If a valid Bearer token is present, attaches req.user.
+ * If the token is missing, invalid, or expired, req.user stays undefined.
+ */
+async function optionalAuth(req, _res, next) {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return next();
+  }
+
+  const token = header.split(' ')[1];
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const user    = await prisma.user.findUnique({ where: { id: payload.sub } });
+    if (user && user.status !== 'INACTIVE') {
+      req.user = user;
+    }
+  } catch {
+    // invalid / expired token — continue as guest
+  }
+
+  next();
+}
+
+module.exports = {
+  authenticate,
+  requireRole,
+  requireOwnerOrAdmin,
+  optionalAuth,
+  optionalAuthenticate: optionalAuth,   // alias pour la compatibilité avec item.routes.js
+};
