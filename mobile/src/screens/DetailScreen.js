@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Modal, TextInput, ActivityIndicator, Alert, Share,
+  ScrollView, Modal, TextInput, ActivityIndicator,
+  Alert, Share, Image, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useAppMode } from '../context/AppModeContext';
 import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
 
-// Normalise un item du backend vers le format attendu par les composants
 function normalizeItem(item) {
   if (!item) return item;
   return {
@@ -30,51 +32,145 @@ function relDate(d) {
 }
 
 export default function DetailScreen({ route, navigation }) {
-  const { item: initialItem } = route.params;
-  const { user } = useAuth();
+  const { item: initialItem }                             = route.params;
+  const { user }                                          = useAuth();
+  const { demoMode, adminDemo }                           = useAppMode();
   const [item,       setItem]       = useState(normalizeItem(initialItem));
   const [claimModal, setClaimModal] = useState(false);
   const [claimMsg,   setClaimMsg]   = useState('');
   const [claimErr,   setClaimErr]   = useState('');
   const [claimLoad,  setClaimLoad]  = useState(false);
+  const [photos,     setPhotos]     = useState(item.photos || []);
+  const [photoLoad,  setPhotoLoad]  = useState(false);
+  const [delLoad,    setDelLoad]    = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: item.title || 'Détail' });
-    api.getItem(item.id)
-      .then(data => setItem(normalizeItem(data.item || data)))
-      .catch(() => {});
+    if (!demoMode) {
+      api.getItem(item.id)
+        .then(data => {
+          const norm = normalizeItem(data.item || data);
+          setItem(norm);
+          setPhotos(norm.photos || []);
+        })
+        .catch(() => {});
+    }
   }, []);
 
-  const isOwner = user && (item.reporter?.id === user.id || item.userId === user.id);
-  const status  = item.status || 'OPEN';
-  const type    = item.type || 'lost';
-  const badge   = TYPE_BADGE[type] || TYPE_BADGE.lost;
+  const isOwner  = user && (item.reporter?.id === user.id || item.userId === user.id)
+                || (demoMode && adminDemo);
+  const status   = item.status || 'OPEN';
+  const type     = item.type || 'lost';
+  const badge    = TYPE_BADGE[type] || TYPE_BADGE.lost;
+  const rep      = item.reporter || {};
+  const initial  = (rep.username || '?')[0].toUpperCase();
 
+  // ── Claim ────────────────────────────────────────────────────────────────
   async function submitClaim() {
     if (!claimMsg.trim()) { setClaimErr('Écrivez un message.'); return; }
     setClaimErr(''); setClaimLoad(true);
     try {
-      await api.createClaim(item.id, claimMsg.trim());
-      setClaimModal(false);
-      setClaimMsg('');
+      if (!demoMode) await api.createClaim(item.id, claimMsg.trim());
+      setClaimModal(false); setClaimMsg('');
       setItem(prev => ({ ...prev, status: 'CLAIMED' }));
-      Alert.alert('Réclamation envoyée !', 'Le propriétaire / déclarant sera notifié.');
+      Alert.alert('Réclamation envoyée !', 'Le déclarant sera notifié.');
     } catch (e) {
       setClaimErr(e.data?.message || "Erreur lors de l'envoi");
     } finally { setClaimLoad(false); }
   }
 
+  // ── Mark resolved ────────────────────────────────────────────────────────
   async function markResolved() {
-    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
+    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Confirmer', onPress: async () => {
         try {
-          await api.updateItem(item.id, { status: 'RESOLVED' });
+          if (!demoMode) await api.updateItem(item.id, { status: 'RESOLVED' });
           setItem(prev => ({ ...prev, status: 'RESOLVED' }));
-        } catch (e) {
-          Alert.alert('Erreur', e.data?.message || e.message);
-        }
+        } catch (e) { Alert.alert('Erreur', e.data?.message || e.message); }
       }},
+    ]);
+  }
+
+  // ── Delete item ──────────────────────────────────────────────────────────
+  async function deleteItem() {
+    Alert.alert(
+      'Supprimer cette annonce',
+      'Cette action est irréversible. Continuer ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: async () => {
+          setDelLoad(true);
+          try {
+            if (!demoMode) await api.deleteItem(item.id);
+            Alert.alert('Supprimé', 'Votre annonce a été supprimée.', [
+              { text: 'OK', onPress: () => navigation.goBack() },
+            ]);
+          } catch (e) {
+            Alert.alert('Erreur', e.data?.message || e.message);
+          } finally { setDelLoad(false); }
+        }},
+      ]
+    );
+  }
+
+  // ── Upload photo ─────────────────────────────────────────────────────────
+  async function pickAndUploadPhoto() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission refusée', 'Autorisez l'accès à la galerie dans les paramètres.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setPhotoLoad(true);
+    try {
+      if (demoMode) {
+        setPhotos(prev => [...prev, { id: String(Date.now()), url: asset.uri }]);
+      } else {
+        const uploaded = await api.uploadPhoto(item.id, asset);
+        setPhotos(prev => [...prev, uploaded.photo || { id: String(Date.now()), url: asset.uri }]);
+      }
+    } catch (e) {
+      Alert.alert('Erreur upload', e.data?.message || e.message);
+    } finally { setPhotoLoad(false); }
+  }
+
+  async function takeAndUploadPhoto() {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permission refusée', 'Autorisez l'accès à la caméra dans les paramètres.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.7,
+    });
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    setPhotoLoad(true);
+    try {
+      if (demoMode) {
+        setPhotos(prev => [...prev, { id: String(Date.now()), url: asset.uri }]);
+      } else {
+        const uploaded = await api.uploadPhoto(item.id, asset);
+        setPhotos(prev => [...prev, uploaded.photo || { id: String(Date.now()), url: asset.uri }]);
+      }
+    } catch (e) {
+      Alert.alert('Erreur upload', e.data?.message || e.message);
+    } finally { setPhotoLoad(false); }
+  }
+
+  function promptPhoto() {
+    Alert.alert('Ajouter une photo', 'Choisissez une source', [
+      { text: 'Galerie',  onPress: pickAndUploadPhoto },
+      { text: 'Caméra',  onPress: takeAndUploadPhoto },
+      { text: 'Annuler', style: 'cancel' },
     ]);
   }
 
@@ -82,15 +178,36 @@ export default function DetailScreen({ route, navigation }) {
     await Share.share({ message: `Campus Lost & Found — "${item.title}" @ ${item.location || 'campus'}` });
   }
 
-  const rep     = item.reporter || {};
-  const initial = (rep.username || '?')[0].toUpperCase();
-
   return (
     <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 120 }}>
-      {/* Image placeholder */}
-      <View style={s.imgPlaceholder}>
-        <Ionicons name="image-outline" size={56} color={COLORS.faint} />
-      </View>
+      {/* Photos carousel ou placeholder */}
+      {photos.length > 0 ? (
+        <FlatList
+          horizontal
+          data={photos}
+          keyExtractor={p => String(p.id)}
+          showsHorizontalScrollIndicator={false}
+          style={{ height: 200 }}
+          renderItem={({ item: p }) => (
+            <Image source={{ uri: p.url || p.path }} style={s.photo} resizeMode="cover" />
+          )}
+        />
+      ) : (
+        <View style={s.imgPlaceholder}>
+          <Ionicons name="image-outline" size={56} color={COLORS.faint} />
+        </View>
+      )}
+
+      {/* Bouton ajout photo (owner uniquement) */}
+      {isOwner && (
+        <TouchableOpacity style={s.photoBtn} onPress={promptPhoto} disabled={photoLoad}>
+          {photoLoad
+            ? <ActivityIndicator color={COLORS.white} size="small" />
+            : <><Ionicons name="camera-outline" size={16} color={COLORS.white} />
+               <Text style={s.photoBtnLabel}>Ajouter une photo</Text></>
+          }
+        </TouchableOpacity>
+      )}
 
       <View style={s.body}>
         {/* Title + badge */}
@@ -101,16 +218,14 @@ export default function DetailScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* Description */}
         {!!item.description && <Text style={s.desc}>{item.description}</Text>}
 
-        {/* Info grid */}
         <View style={s.grid}>
           {[
             { label: 'Catégorie', val: item.category || '—' },
             { label: 'Lieu',       val: item.location  || '—' },
             { label: 'Date',       val: relDate(item.createdAt || item.date) },
-            { label: 'Statut',     val: STATUS_LABEL[item.status] || item.status || '—' },
+            { label: 'Statut',     val: STATUS_LABEL?.[item.status] || item.status || '—' },
           ].map(({ label, val }) => (
             <View key={label} style={s.gridItem}>
               <Text style={s.gridLabel}>{label}</Text>
@@ -119,7 +234,15 @@ export default function DetailScreen({ route, navigation }) {
           ))}
         </View>
 
-        {/* Reporter */}
+        {adminDemo && (
+          <View style={s.adminPanel}>
+            <Text style={s.adminPanelTitle}>👑 Panneau admin</Text>
+            <Text style={s.adminPanelInfo}>ID : {item.id}</Text>
+            <Text style={s.adminPanelInfo}>Reporter ID : {rep.id || '—'}</Text>
+            <Text style={s.adminPanelInfo}>Status brut : {item.status}</Text>
+          </View>
+        )}
+
         <View style={s.reporter}>
           <View style={s.avatar}><Text style={s.avatarText}>{initial}</Text></View>
           <View>
@@ -133,17 +256,17 @@ export default function DetailScreen({ route, navigation }) {
       <View style={s.actions}>
         {status === 'OPEN' && !isOwner && type === 'found' && (
           <TouchableOpacity style={s.btnPrimary} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>📦 Réclamer cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>📦 Réclamer cet objet</Text>
           </TouchableOpacity>
         )}
         {status === 'OPEN' && !isOwner && type === 'lost' && (
           <TouchableOpacity style={s.btnSuccess} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>✋ J’ai trouvé cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>✋ J'ai trouvé cet objet</Text>
           </TouchableOpacity>
         )}
         {(status === 'OPEN' || status === 'CLAIMED') && isOwner && (
           <TouchableOpacity style={s.btnSuccess} onPress={markResolved}>
-            <Text style={s.btnPrimaryLabel}>✅ Marquer comme rendu</Text>
+            <Text style={s.btnPrimaryLabel}>✅ Marquer comme rendu</Text>
           </TouchableOpacity>
         )}
         {status === 'CLAIMED' && !isOwner && (
@@ -156,6 +279,18 @@ export default function DetailScreen({ route, navigation }) {
             <Text style={[s.btnDisabledLabel, { color: COLORS.success }]}>✅ Objet rendu — affaire résolue</Text>
           </View>
         )}
+
+        {/* Supprimer (owner) */}
+        {isOwner && status !== 'RESOLVED' && (
+          <TouchableOpacity style={s.btnDanger} onPress={deleteItem} disabled={delLoad}>
+            {delLoad
+              ? <ActivityIndicator color={COLORS.error} size="small" />
+              : <><Ionicons name="trash-outline" size={16} color={COLORS.error} />
+                 <Text style={s.btnDangerLabel}>Supprimer mon annonce</Text></>
+            }
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={s.btnGhost} onPress={shareItem}>
           <Ionicons name="share-outline" size={18} color={COLORS.primary} />
           <Text style={s.btnGhostLabel}>Partager cette annonce</Text>
@@ -171,7 +306,7 @@ export default function DetailScreen({ route, navigation }) {
           <Text style={s.sheetDesc}>Décrivez brièvement comment vous pouvez le prouver.</Text>
           <TextInput
             style={s.claimInput} value={claimMsg} onChangeText={setClaimMsg}
-            placeholder="Ex : Mon téléphone a une coque transparente avec une photo de mon chien…"
+            placeholder="Ex : Mon téléphone a une coque transparente avec une photo de mon chien…"
             placeholderTextColor={COLORS.faint}
             multiline numberOfLines={4} textAlignVertical="top"
           />
@@ -188,6 +323,9 @@ export default function DetailScreen({ route, navigation }) {
 const s = StyleSheet.create({
   scroll:          { flex: 1, backgroundColor: COLORS.bg },
   imgPlaceholder:  { height: 200, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
+  photo:           { width: 280, height: 200, marginRight: 4 },
+  photoBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primary, marginHorizontal: SPACING.base, marginTop: SPACING.sm, borderRadius: RADIUS.lg, paddingVertical: 10, paddingHorizontal: SPACING.md, justifyContent: 'center' },
+  photoBtnLabel:   { color: COLORS.white, fontSize: 14, fontWeight: FONT.semibold },
   body:            { padding: SPACING.base },
   titleRow:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: SPACING.md },
   title:           { fontSize: 22, fontWeight: FONT.bold, color: COLORS.text, flex: 1, letterSpacing: -0.4 },
@@ -198,6 +336,9 @@ const s = StyleSheet.create({
   gridItem:        { flex: 1, minWidth: '45%', backgroundColor: COLORS.offset, borderRadius: RADIUS.lg, padding: SPACING.md },
   gridLabel:       { fontSize: 11, color: COLORS.faint, fontWeight: FONT.bold, letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 3 },
   gridVal:         { fontSize: 14, fontWeight: FONT.semibold, color: COLORS.text },
+  adminPanel:      { backgroundColor: '#FFF8E1', borderRadius: RADIUS.lg, padding: SPACING.md, marginBottom: SPACING.md, borderWidth: 1, borderColor: '#FFD54F' },
+  adminPanelTitle: { fontSize: 13, fontWeight: FONT.bold, color: '#E65100', marginBottom: 4 },
+  adminPanelInfo:  { fontSize: 12, color: '#5D4037', fontFamily: 'monospace', marginBottom: 2 },
   reporter:        { flexDirection: 'row', alignItems: 'center', gap: SPACING.md, backgroundColor: COLORS.offset, borderRadius: RADIUS.xl, padding: SPACING.md },
   avatar:          { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.primaryHi, alignItems: 'center', justifyContent: 'center' },
   avatarText:      { fontSize: 16, fontWeight: FONT.bold, color: COLORS.primary },
@@ -207,6 +348,8 @@ const s = StyleSheet.create({
   btnPrimary:      { backgroundColor: COLORS.primary, borderRadius: RADIUS.lg, padding: SPACING.md, alignItems: 'center', minHeight: 50, justifyContent: 'center' },
   btnSuccess:      { backgroundColor: COLORS.success, borderRadius: RADIUS.lg, padding: SPACING.md, alignItems: 'center', minHeight: 50, justifyContent: 'center' },
   btnPrimaryLabel: { color: COLORS.white, fontSize: 16, fontWeight: FONT.bold },
+  btnDanger:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: RADIUS.lg, padding: SPACING.md, borderWidth: 1.5, borderColor: COLORS.error, minHeight: 50 },
+  btnDangerLabel:  { color: COLORS.error, fontSize: 15, fontWeight: FONT.semibold },
   btnDisabled:     { borderRadius: RADIUS.lg, padding: SPACING.md, alignItems: 'center', borderWidth: 1.5, borderColor: COLORS.border },
   btnDisabledLabel:{ fontSize: 14, fontWeight: FONT.medium, color: COLORS.muted },
   btnGhost:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: SPACING.md },

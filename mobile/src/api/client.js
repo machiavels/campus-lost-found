@@ -1,6 +1,5 @@
 import Constants from 'expo-constants';
 
-// Récupère l'URL depuis .env (EXPO_PUBLIC_API_URL) ou extra dans app.json
 const BASE = Constants.expoConfig?.extra?.apiUrl
   || process.env.EXPO_PUBLIC_API_URL
   || 'http://localhost:3000';
@@ -39,29 +38,51 @@ export const api = {
   getItems:  (page = 1, limit = 20) => request('GET', `/api/items?page=${page}&limit=${limit}`),
   getItem:   (id)              => request('GET',   `/api/items/${id}`),
   createItem:(body)            => request('POST',  '/api/items', body),
-  updateItem:(id, body)        => request('PATCH',  `/api/items/${id}`, body),
+  updateItem:(id, body)        => request('PATCH', `/api/items/${id}`, body),
+  deleteItem:(id)              => request('DELETE', `/api/items/${id}`),
+
+  // Photos
+  uploadPhoto: async (itemId, asset) => {
+    const formData = new FormData();
+    const filename = asset.uri.split('/').pop();
+    const match    = /\.(\w+)$/.exec(filename);
+    const type     = match ? `image/${match[1]}` : 'image/jpeg';
+    formData.append('photo', { uri: asset.uri, name: filename, type });
+
+    const headers = {};
+    if (_token) headers['Authorization'] = 'Bearer ' + _token;
+
+    const res = await fetch(
+      BASE.replace(/\/$/, '') + `/api/items/${itemId}/photos`,
+      { method: 'POST', headers, body: formData }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.message || `Erreur ${res.status}`), { status: res.status, data });
+    return data;
+  },
 
   // Reference
   getCategories: () => request('GET', '/api/categories').then(r => r.categories ?? r),
   getLocations:  () => request('GET', '/api/locations').then(r => r.locations ?? r),
 
   // Search
-  search:    (q, filters = {}) => {
+  search: (q, filters = {}) => {
     const p = new URLSearchParams();
     if (q) p.set('q', q);
     Object.entries(filters).forEach(([k, v]) => v && p.set(k, v));
     return request('GET', `/api/search/items?${p.toString()}`);
   },
 
-  // Claims — backend attend { itemId, requestMessage }
-  createClaim: (itemId, message) => request('POST', '/api/claims', { itemId, requestMessage: message }),
+  // Claims
+  createClaim: (itemId, requestMessage) => request('POST', '/api/claims', { itemId, requestMessage }),
+  getMyClaims: ()                        => request('GET',  '/api/claims/my'),
 
   // User
-  getMe:     ()                => request('GET', '/api/users/me'),
+  getMe:     () => request('GET', '/api/users/me'),
 
   // Messages
-  getConversations: ()         => request('GET', '/api/messages/conversations'),
+  getConversations: () => request('GET', '/api/messages/conversations'),
 
   // Notifications
-  getNotifications: ()         => request('GET', '/api/notifications?unread=true'),
+  getNotifications: () => request('GET', '/api/notifications'),
 };
