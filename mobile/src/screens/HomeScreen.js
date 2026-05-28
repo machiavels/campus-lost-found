@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, RefreshControl, ActivityIndicator, Switch,
+  StyleSheet, RefreshControl, ActivityIndicator, Switch, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { api } from '../api/client';
+import { api, getBase } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useAppMode } from '../context/AppModeContext';
 import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
@@ -42,13 +42,33 @@ function relDate(d) {
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
+/** Construit l'URL complète d'une photo (même logique que DetailScreen). */
+function thumbUrl(photos) {
+  const first = Array.isArray(photos) && photos.length > 0 ? photos[0] : null;
+  if (!first) return null;
+  const raw = first.url || first.path || '';
+  if (!raw) return null;
+  if (raw.startsWith('http')) return raw;
+  return getBase() + raw;
+}
+
 function ItemCard({ item, onPress }) {
   const type  = item.type || 'lost';
   const badge = TYPE_BADGE[type] || TYPE_BADGE.lost;
+  const thumb = thumbUrl(item.photos);
+
   return (
     <TouchableOpacity style={s.card} onPress={() => onPress(item)} activeOpacity={0.75}>
-      <View style={s.cardImgPlaceholder}>
-        <Ionicons name="image-outline" size={28} color={COLORS.faint} />
+      <View style={s.cardImg}>
+        {thumb ? (
+          <Image
+            source={{ uri: thumb }}
+            style={s.cardImgPhoto}
+            resizeMode="cover"
+          />
+        ) : (
+          <Ionicons name="image-outline" size={28} color={COLORS.faint} />
+        )}
       </View>
       <View style={s.cardBody}>
         <View style={s.cardHeader}>
@@ -118,11 +138,11 @@ export default function HomeScreen({ navigation }) {
 
   const StatBoxes = adminDemo
     ? [
-        { num: stats.lost,     label: 'Perdus'   },
-        { num: stats.found,    label: 'Trouvés'  },
-        { num: stats.resolved, label: 'Rendus'   },
+        { num: stats.lost,     label: 'Perdus'     },
+        { num: stats.found,    label: 'Trouvés'    },
+        { num: stats.resolved, label: 'Rendus'     },
         { num: stats.pending,  label: 'En attente' },
-        { num: stats.claimed,  label: 'Réclamés' },
+        { num: stats.claimed,  label: 'Réclamés'   },
       ]
     : [
         { num: stats.lost,     label: 'Perdus'  },
@@ -177,13 +197,23 @@ export default function HomeScreen({ navigation }) {
       <FlatList
         data={items}
         keyExtractor={i => String(i.id)}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={COLORS.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); load(true); }}
+            tintColor={COLORS.primary}
+          />
+        }
         ListHeaderComponent={
           <>
             <View style={s.feedHeader}>
               <Text style={s.feedTitle}>Objets perdus & trouvés</Text>
               <Text style={s.feedSub}>Bonjour{user?.username ? ', ' + user.username : ''} 👋</Text>
-              {adminDemo && <View style={s.adminBadge}><Text style={s.adminBadgeLabel}>👑 Vue admin activée</Text></View>}
+              {adminDemo && (
+                <View style={s.adminBadge}>
+                  <Text style={s.adminBadgeLabel}>👑 Vue admin activée</Text>
+                </View>
+              )}
             </View>
             <View style={s.statsRow}>
               {StatBoxes.map(s2 => (
@@ -229,7 +259,8 @@ const s = StyleSheet.create({
   statLabel:       { fontSize: 11, color: COLORS.muted, marginTop: 2, textAlign: 'center' },
   sectionLabel:    { paddingHorizontal: SPACING.base, paddingBottom: 6, fontSize: 11, fontWeight: FONT.bold, color: COLORS.faint, letterSpacing: 1 },
   card:            { flexDirection: 'row', backgroundColor: COLORS.surface, marginHorizontal: SPACING.base, marginBottom: SPACING.sm, borderRadius: RADIUS.xl, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  cardImgPlaceholder: { width: 80, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
+  cardImg:         { width: 80, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
+  cardImgPhoto:    { width: 80, height: '100%' },
   cardBody:        { flex: 1, padding: SPACING.md },
   cardHeader:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, marginBottom: 4 },
   cardTitle:       { fontSize: 15, fontWeight: FONT.semibold, color: COLORS.text, flex: 1 },
