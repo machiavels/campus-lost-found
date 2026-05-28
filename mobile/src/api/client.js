@@ -7,8 +7,8 @@ const BASE = Constants.expoConfig?.extra?.apiUrl
 
 let _token        = null;
 let _refreshToken = null;
-let _refreshing   = false;       // verrou pour éviter les rafales de refresh
-let _refreshQueue = [];          // requêtes en attente pendant le refresh
+let _refreshing   = false;
+let _refreshQueue = [];
 
 export function setToken(t)        { _token = t; }
 export function getToken()         { return _token; }
@@ -58,11 +58,9 @@ async function request(method, path, body = null) {
   try {
     return await doRequest(method, path, body);
   } catch (err) {
-    // Sur 401 : tenter un refresh une seule fois
     if (err.status !== 401 || !_refreshToken) throw err;
 
     if (_refreshing) {
-      // Une autre requête est déjà en train de refresher — on attend
       return new Promise((resolve, reject) => {
         _refreshQueue.push({ resolve, reject, method, path, body });
       });
@@ -71,14 +69,12 @@ async function request(method, path, body = null) {
     _refreshing = true;
     try {
       await tryRefresh();
-      // Rejouer toutes les requêtes en attente
       _refreshQueue.forEach(q =>
         doRequest(q.method, q.path, q.body).then(q.resolve).catch(q.reject)
       );
       _refreshQueue = [];
       return await doRequest(method, path, body);
     } catch (_) {
-      // Refresh impossible — déconnexion forcée
       _refreshQueue.forEach(q => q.reject(new Error('session_expired')));
       _refreshQueue = [];
       _token        = null;
@@ -105,19 +101,22 @@ export const api = {
   updateItem: (id, body)             => request('PATCH', `/api/items/${id}`, body),
   deleteItem: (id)                   => request('DELETE', `/api/items/${id}`),
 
-  // Photos
+  // Photos — field name DOIT être 'photos' (upload.array('photos', 5) côté serveur)
   uploadPhoto: async (itemId, asset) => {
     const formData = new FormData();
     const filename = asset.uri.split('/').pop();
     const match    = /\.(\w+)$/.exec(filename);
-    const type     = match ? `image/${match[1]}` : 'image/jpeg';
-    formData.append('photo', { uri: asset.uri, name: filename, type });
+    const type     = match ? `image/${match[1].replace('jpg', 'jpeg')}` : 'image/jpeg';
+    formData.append('photos', { uri: asset.uri, name: filename, type });
     const headers = {};
     if (_token) headers['Authorization'] = 'Bearer ' + _token;
     const res = await fetch(BASE.replace(/\/$/, '') + `/api/items/${itemId}/photos`,
       { method: 'POST', headers, body: formData });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.message || `Erreur ${res.status}`), { status: res.status, data });
+    if (!res.ok) throw Object.assign(
+      new Error(data.message || data.error || `Erreur ${res.status}`),
+      { status: res.status, data }
+    );
     return data;
   },
 
