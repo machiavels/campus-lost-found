@@ -1,7 +1,7 @@
 {
   "name": "campus-lost-found-mobile",
   "version": "2.0.0",
-  "main": "expo-router/entry",
+  "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
