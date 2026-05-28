@@ -53,8 +53,8 @@ export const api = {
     return request('GET', `/api/search/items?${p.toString()}`);
   },
 
-  // Claims
-  createClaim: (itemId, message) => request('POST', '/api/claims', { itemId, message }),
+  // Claims — backend attend { itemId, requestMessage }
+  createClaim: (itemId, message) => request('POST', '/api/claims', { itemId, requestMessage: message }),
 
   // User
   getMe:     ()                => request('GET', '/api/users/me'),
