@@ -6,10 +6,21 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { api } from '../api/client';
+import { api, getBase } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useAppMode } from '../context/AppModeContext';
 import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
+
+/**
+ * Construit l'URL complète d'une photo.
+ * Le serveur renvoie soit une URL absolue, soit un chemin relatif (/uploads/xxx.jpg).
+ */
+function photoUrl(p) {
+  const raw = p?.url || p?.path || '';
+  if (!raw) return null;
+  if (raw.startsWith('http')) return raw;
+  return getBase() + raw;
+}
 
 function normalizeItem(item) {
   if (!item) return item;
@@ -40,12 +51,12 @@ export default function DetailScreen({ route, navigation }) {
   const [claimMsg,   setClaimMsg]   = useState('');
   const [claimErr,   setClaimErr]   = useState('');
   const [claimLoad,  setClaimLoad]  = useState(false);
-  const [photos,     setPhotos]     = useState(item.photos || []);
+  const [photos,     setPhotos]     = useState(initialItem?.photos || []);
   const [photoLoad,  setPhotoLoad]  = useState(false);
   const [delLoad,    setDelLoad]    = useState(false);
 
   useEffect(() => {
-    navigation.setOptions({ title: item.title || 'D\u00e9tail' });
+    navigation.setOptions({ title: item.title || 'Détail' });
     if (!demoMode) {
       api.getItem(item.id)
         .then(data => {
@@ -57,29 +68,30 @@ export default function DetailScreen({ route, navigation }) {
     }
   }, []);
 
+  // isOwner : propriétaire réel OU toggle adminDemo actif en démo
   const isOwner = (user && (item.reporter?.id === user.id || item.userId === user.id))
                || (demoMode && adminDemo);
-  const status  = item.status || 'OPEN';
-  const type    = item.type || 'lost';
-  const badge   = TYPE_BADGE[type] || TYPE_BADGE.lost;
-  const rep     = item.reporter || {};
+  const status = item.status || 'OPEN';
+  const type   = item.type   || 'lost';
+  const badge  = TYPE_BADGE[type] || TYPE_BADGE.lost;
+  const rep    = item.reporter || {};
   const initial = (rep.username || '?')[0].toUpperCase();
 
   async function submitClaim() {
-    if (!claimMsg.trim()) { setClaimErr('\u00c9crivez un message.'); return; }
+    if (!claimMsg.trim()) { setClaimErr('Écrivez un message.'); return; }
     setClaimErr(''); setClaimLoad(true);
     try {
       if (!demoMode) await api.createClaim(item.id, claimMsg.trim());
       setClaimModal(false); setClaimMsg('');
       setItem(prev => ({ ...prev, status: 'CLAIMED' }));
-      Alert.alert('R\u00e9clamation envoy\u00e9e !', 'Le d\u00e9clarant sera notifi\u00e9.');
+      Alert.alert('Réclamation envoyée !', 'Le déclarant sera notifié.');
     } catch (e) {
       setClaimErr(e.data?.message || "Erreur lors de l'envoi");
     } finally { setClaimLoad(false); }
   }
 
   async function markResolved() {
-    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
+    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Confirmer', onPress: async () => {
         try {
@@ -93,14 +105,14 @@ export default function DetailScreen({ route, navigation }) {
   async function deleteItem() {
     Alert.alert(
       'Supprimer cette annonce',
-      'Cette action est irr\u00e9versible. Continuer ?',
+      'Cette action est irréversible. Continuer ?',
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Supprimer', style: 'destructive', onPress: async () => {
           setDelLoad(true);
           try {
             if (!demoMode) await api.deleteItem(item.id);
-            Alert.alert('Supprim\u00e9', 'Votre annonce a \u00e9t\u00e9 supprim\u00e9e.', [
+            Alert.alert('Supprimé', 'Votre annonce a été supprimée.', [
               { text: 'OK', onPress: () => navigation.goBack() },
             ]);
           } catch (e) {
@@ -111,81 +123,74 @@ export default function DetailScreen({ route, navigation }) {
     );
   }
 
-  async function pickAndUploadPhoto() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission refus\u00e9e', "Autorisez l'acc\u00e8s \u00e0 la galerie dans les param\u00e8tres.");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.7,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
+  async function handlePickPhoto(launchFn) {
+    const asset = await launchFn();
+    if (!asset) return;
     setPhotoLoad(true);
     try {
       if (demoMode) {
+        // En démo : prévisualise l'URI locale directement
         setPhotos(prev => [...prev, { id: String(Date.now()), url: asset.uri }]);
       } else {
-        const uploaded = await api.uploadPhoto(item.id, asset);
-        setPhotos(prev => [...prev, uploaded.photo || { id: String(Date.now()), url: asset.uri }]);
+        const data = await api.uploadPhoto(item.id, asset);
+        // Le serveur renvoie { photos: [{id, url}] } ou { photo: {id, url} }
+        const uploaded = data.photos?.[0] || data.photo || { id: String(Date.now()), url: asset.uri };
+        setPhotos(prev => [...prev, uploaded]);
       }
     } catch (e) {
       Alert.alert('Erreur upload', e.data?.message || e.message);
     } finally { setPhotoLoad(false); }
   }
 
-  async function takeAndUploadPhoto() {
+  async function pickFromGallery() {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission refusée', "Autorisez l'accès à la galerie."); return null; }
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.7 });
+    return result.canceled ? null : result.assets[0];
+  }
+
+  async function pickFromCamera() {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission refus\u00e9e', "Autorisez l'acc\u00e8s \u00e0 la cam\u00e9ra dans les param\u00e8tres.");
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      quality: 0.7,
-    });
-    if (result.canceled) return;
-    const asset = result.assets[0];
-    setPhotoLoad(true);
-    try {
-      if (demoMode) {
-        setPhotos(prev => [...prev, { id: String(Date.now()), url: asset.uri }]);
-      } else {
-        const uploaded = await api.uploadPhoto(item.id, asset);
-        setPhotos(prev => [...prev, uploaded.photo || { id: String(Date.now()), url: asset.uri }]);
-      }
-    } catch (e) {
-      Alert.alert('Erreur upload', e.data?.message || e.message);
-    } finally { setPhotoLoad(false); }
+    if (!perm.granted) { Alert.alert('Permission refusée', "Autorisez l'accès à la caméra."); return null; }
+    const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.7 });
+    return result.canceled ? null : result.assets[0];
   }
 
   function promptPhoto() {
     Alert.alert('Ajouter une photo', 'Choisissez une source', [
-      { text: 'Galerie',  onPress: pickAndUploadPhoto },
-      { text: 'Cam\u00e9ra',   onPress: takeAndUploadPhoto },
+      { text: 'Galerie',  onPress: () => handlePickPhoto(pickFromGallery) },
+      { text: 'Caméra',   onPress: () => handlePickPhoto(pickFromCamera) },
       { text: 'Annuler', style: 'cancel' },
     ]);
   }
 
   async function shareItem() {
-    await Share.share({ message: `Campus Lost & Found \u2014 "${item.title}" @ ${item.location || 'campus'}` });
+    await Share.share({ message: `Campus Lost & Found — "${item.title}" @ ${item.location || 'campus'}` });
   }
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 120 }}>
+
+      {/* Zone photo */}
       {photos.length > 0 ? (
         <FlatList
           horizontal
           data={photos}
           keyExtractor={p => String(p.id)}
           showsHorizontalScrollIndicator={false}
-          style={{ height: 200 }}
-          renderItem={({ item: p }) => (
-            <Image source={{ uri: p.url || p.path }} style={s.photo} resizeMode="cover" />
-          )}
+          style={{ height: 220 }}
+          renderItem={({ item: p }) => {
+            const uri = photoUrl(p);
+            if (!uri) return null;
+            return (
+              <Image
+                source={{ uri }}
+                style={s.photo}
+                resizeMode="cover"
+                onError={() => {/* image corrompue, silencieux */}}
+              />
+            );
+          }}
         />
       ) : (
         <View style={s.imgPlaceholder}>
@@ -193,12 +198,15 @@ export default function DetailScreen({ route, navigation }) {
         </View>
       )}
 
+      {/* Bouton photo uniquement pour le propriétaire */}
       {isOwner && (
         <TouchableOpacity style={s.photoBtn} onPress={promptPhoto} disabled={photoLoad}>
           {photoLoad
             ? <ActivityIndicator color={COLORS.white} size="small" />
-            : <><Ionicons name="camera-outline" size={16} color={COLORS.white} />
-               <Text style={s.photoBtnLabel}>Ajouter une photo</Text></>
+            : <>
+                <Ionicons name="camera-outline" size={16} color={COLORS.white} />
+                <Text style={s.photoBtnLabel}>Ajouter une photo</Text>
+              </>
           }
         </TouchableOpacity>
       )}
@@ -215,10 +223,10 @@ export default function DetailScreen({ route, navigation }) {
 
         <View style={s.grid}>
           {[
-            { label: 'Cat\u00e9gorie', val: item.category || '\u2014' },
-            { label: 'Lieu',        val: item.location  || '\u2014' },
-            { label: 'Date',        val: relDate(item.createdAt || item.date) },
-            { label: 'Statut',      val: STATUS_LABEL?.[item.status] || item.status || '\u2014' },
+            { label: 'Catégorie', val: item.category || '—' },
+            { label: 'Lieu',       val: item.location  || '—' },
+            { label: 'Date',       val: relDate(item.createdAt || item.date) },
+            { label: 'Statut',     val: STATUS_LABEL?.[item.status] || item.status || '—' },
           ].map(({ label, val }) => (
             <View key={label} style={s.gridItem}>
               <Text style={s.gridLabel}>{label}</Text>
@@ -229,17 +237,17 @@ export default function DetailScreen({ route, navigation }) {
 
         {adminDemo && (
           <View style={s.adminPanel}>
-            <Text style={s.adminPanelTitle}>&#128081; Panneau admin</Text>
-            <Text style={s.adminPanelInfo}>ID : {item.id}</Text>
-            <Text style={s.adminPanelInfo}>Reporter ID : {rep.id || '\u2014'}</Text>
-            <Text style={s.adminPanelInfo}>Status brut : {item.status}</Text>
+            <Text style={s.adminPanelTitle}>👑 Panneau admin</Text>
+            <Text style={s.adminPanelInfo}>ID : {item.id}</Text>
+            <Text style={s.adminPanelInfo}>Reporter ID : {rep.id || '—'}</Text>
+            <Text style={s.adminPanelInfo}>Status brut : {item.status}</Text>
           </View>
         )}
 
         <View style={s.reporter}>
           <View style={s.avatar}><Text style={s.avatarText}>{initial}</Text></View>
           <View>
-            <Text style={s.reporterSub}>D\u00e9clar\u00e9 par</Text>
+            <Text style={s.reporterSub}>Déclaré par</Text>
             <Text style={s.reporterName}>{rep.username || rep.email || 'Anonyme'}</Text>
           </View>
         </View>
@@ -248,12 +256,12 @@ export default function DetailScreen({ route, navigation }) {
       <View style={s.actions}>
         {status === 'OPEN' && !isOwner && type === 'found' && (
           <TouchableOpacity style={s.btnPrimary} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>R\u00e9clamer cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>Réclamer cet objet</Text>
           </TouchableOpacity>
         )}
         {status === 'OPEN' && !isOwner && type === 'lost' && (
           <TouchableOpacity style={s.btnSuccess} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>J'ai trouv\u00e9 cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>J'ai trouvé cet objet</Text>
           </TouchableOpacity>
         )}
         {(status === 'OPEN' || status === 'CLAIMED') && isOwner && (
@@ -263,20 +271,22 @@ export default function DetailScreen({ route, navigation }) {
         )}
         {status === 'CLAIMED' && !isOwner && (
           <View style={s.btnDisabled}>
-            <Text style={s.btnDisabledLabel}>R\u00e9clam\u00e9 \u2014 en attente de confirmation</Text>
+            <Text style={s.btnDisabledLabel}>Réclamé — en attente de confirmation</Text>
           </View>
         )}
         {status === 'RESOLVED' && (
           <View style={[s.btnDisabled, { borderColor: COLORS.success }]}>
-            <Text style={[s.btnDisabledLabel, { color: COLORS.success }]}>Objet rendu \u2014 affaire r\u00e9solue</Text>
+            <Text style={[s.btnDisabledLabel, { color: COLORS.success }]}>Objet rendu — affaire résolue</Text>
           </View>
         )}
         {isOwner && status !== 'RESOLVED' && (
           <TouchableOpacity style={s.btnDanger} onPress={deleteItem} disabled={delLoad}>
             {delLoad
               ? <ActivityIndicator color={COLORS.error} size="small" />
-              : <><Ionicons name="trash-outline" size={16} color={COLORS.error} />
-                 <Text style={s.btnDangerLabel}>Supprimer mon annonce</Text></>
+              : <>
+                  <Ionicons name="trash-outline" size={16} color={COLORS.error} />
+                  <Text style={s.btnDangerLabel}>Supprimer mon annonce</Text>
+                </>
             }
           </TouchableOpacity>
         )}
@@ -290,17 +300,22 @@ export default function DetailScreen({ route, navigation }) {
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setClaimModal(false)} />
         <View style={s.sheet}>
           <View style={s.sheetHandle} />
-          <Text style={s.sheetTitle}>{type === 'found' ? 'R\u00e9clamer cet objet' : "Signaler que vous l'avez trouv\u00e9"}</Text>
-          <Text style={s.sheetDesc}>D\u00e9crivez bri\u00e8vement comment vous pouvez le prouver.</Text>
+          <Text style={s.sheetTitle}>
+            {type === 'found' ? 'Réclamer cet objet' : "Signaler que vous l'avez trouvé"}
+          </Text>
+          <Text style={s.sheetDesc}>Décrivez brièvement comment vous pouvez le prouver.</Text>
           <TextInput
             style={s.claimInput} value={claimMsg} onChangeText={setClaimMsg}
-            placeholder="Ex : Mon t\u00e9l\u00e9phone a une coque transparente avec une photo de mon chien\u2026"
+            placeholder="Ex : Mon téléphone a une coque transparente avec une photo de mon chien…"
             placeholderTextColor={COLORS.faint}
             multiline numberOfLines={4} textAlignVertical="top"
           />
           {!!claimErr && <Text style={s.errMsg}>{claimErr}</Text>}
           <TouchableOpacity style={[s.btnPrimary, claimLoad && { opacity: 0.6 }]} onPress={submitClaim} disabled={claimLoad}>
-            {claimLoad ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.btnPrimaryLabel}>Envoyer la r\u00e9clamation</Text>}
+            {claimLoad
+              ? <ActivityIndicator color={COLORS.white} />
+              : <Text style={s.btnPrimaryLabel}>Envoyer la réclamation</Text>
+            }
           </TouchableOpacity>
         </View>
       </Modal>
@@ -310,8 +325,8 @@ export default function DetailScreen({ route, navigation }) {
 
 const s = StyleSheet.create({
   scroll:          { flex: 1, backgroundColor: COLORS.bg },
-  imgPlaceholder:  { height: 200, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
-  photo:           { width: 280, height: 200, marginRight: 4 },
+  imgPlaceholder:  { height: 220, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
+  photo:           { width: 300, height: 220, marginRight: 4 },
   photoBtn:        { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primary, marginHorizontal: SPACING.base, marginTop: SPACING.sm, borderRadius: RADIUS.lg, paddingVertical: 10, paddingHorizontal: SPACING.md, justifyContent: 'center' },
   photoBtnLabel:   { color: COLORS.white, fontSize: 14, fontWeight: FONT.semibold },
   body:            { padding: SPACING.base },
