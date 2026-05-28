@@ -2,6 +2,9 @@ const prisma  = require('../config/prisma');
 const { catchAsync } = require('../middleware/error.middleware');
 const notify  = require('../services/notify');
 
+// Statuts sur lesquels une réclamation est autorisée
+const CLAIMABLE_STATUSES = ['PENDING', 'OPEN', 'VERIFIED'];
+
 /** POST /api/claims
  *  Body: { itemId, requestMessage }
  */
@@ -11,11 +14,10 @@ exports.submitClaim = catchAsync(async (req, res) => {
     return res.status(422).json({ error: 'itemId and requestMessage are required' });
   }
 
-  // Only allow claims on VERIFIED items
   const item = await prisma.item.findUnique({ where: { id: itemId } });
   if (!item) return res.status(404).json({ error: 'Item not found' });
-  if (item.status !== 'VERIFIED') {
-    return res.status(409).json({ error: 'Claims can only be submitted on verified items' });
+  if (!CLAIMABLE_STATUSES.includes(item.status)) {
+    return res.status(409).json({ error: `Cannot claim an item with status ${item.status}` });
   }
 
   // Prevent duplicate pending claims from the same user
@@ -109,7 +111,7 @@ exports.rejectClaim = catchAsync(async (req, res) => {
   await _setClaimStatus(req.params.id, 'REJECTED', res);
 });
 
-// ─── Internal helper ─────────────────────────────────────────────────────────
+// ─── Internal helper ──────────────────────────────────────────────────────────────────────────────
 
 async function _setClaimStatus(id, status, res) {
   const claim = await prisma.claimRequest.findUnique({
@@ -133,14 +135,12 @@ async function _setClaimStatus(id, status, res) {
     },
   });
 
-  // If approved → mark item as CLAIMED and reject all other pending claims for it
   if (status === 'APPROVED') {
     await prisma.$transaction([
       prisma.item.update({
         where: { id: claim.itemId },
         data:  { status: 'CLAIMED', claimedById: claim.requesterId, claimedAt: new Date() },
       }),
-      // Auto-reject sibling pending claims
       prisma.claimRequest.updateMany({
         where: { itemId: claim.itemId, status: 'PENDING', id: { not: id } },
         data:  { status: 'REJECTED' },
@@ -148,7 +148,6 @@ async function _setClaimStatus(id, status, res) {
     ]);
   }
 
-  // Notify the requester
   await notify({
     userId:  claim.requesterId,
     type:    status === 'APPROVED' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED',
