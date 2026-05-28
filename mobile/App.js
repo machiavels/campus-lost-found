@@ -8,16 +8,17 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AppModeProvider } from './src/context/AppModeContext';
-import AuthScreen from './src/screens/AuthScreen';
-import HomeScreen from './src/screens/HomeScreen';
-import SearchScreen from './src/screens/SearchScreen';
-import DetailScreen from './src/screens/DetailScreen';
+import AuthScreen    from './src/screens/AuthScreen';
+import HomeScreen    from './src/screens/HomeScreen';
+import SearchScreen  from './src/screens/SearchScreen';
+import DetailScreen  from './src/screens/DetailScreen';
 import DeclareScreen from './src/screens/DeclareScreen';
 import MessagesScreen from './src/screens/MessagesScreen';
+import ChatScreen    from './src/screens/ChatScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import { COLORS } from './src/theme';
 
-const Tab = createBottomTabNavigator();
+const Tab   = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
 function HomeTabs() {
@@ -25,33 +26,33 @@ function HomeTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
+        tabBarActiveTintColor:   COLORS.primary,
         tabBarInactiveTintColor: COLORS.muted,
         tabBarStyle: {
           backgroundColor: COLORS.surface,
-          borderTopColor: COLORS.border,
-          borderTopWidth: 1,
-          height: 60,
-          paddingBottom: 8,
+          borderTopColor:  COLORS.border,
+          borderTopWidth:  1,
+          height:          60,
+          paddingBottom:   8,
         },
         tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         tabBarIcon: ({ focused, color, size }) => {
           const icons = {
-            Accueil:   focused ? 'home'          : 'home-outline',
-            Recherche: focused ? 'search'        : 'search-outline',
-            'Déclarer':  focused ? 'add-circle'    : 'add-circle-outline',
-            Messages:  focused ? 'chatbubbles'   : 'chatbubbles-outline',
-            Profil:    focused ? 'person'        : 'person-outline',
+            Accueil:    focused ? 'home'         : 'home-outline',
+            Recherche:  focused ? 'search'       : 'search-outline',
+            'D\u00e9clarer': focused ? 'add-circle'   : 'add-circle-outline',
+            Messages:   focused ? 'chatbubbles'  : 'chatbubbles-outline',
+            Profil:     focused ? 'person'       : 'person-outline',
           };
           return <Ionicons name={icons[route.name] || 'ellipse'} size={size} color={color} />;
         },
       })}
     >
-      <Tab.Screen name="Accueil"   component={HomeScreen} />
-      <Tab.Screen name="Recherche" component={SearchScreen} />
-      <Tab.Screen name="Déclarer"  component={DeclareScreen} />
-      <Tab.Screen name="Messages"  component={MessagesScreen} />
-      <Tab.Screen name="Profil"    component={ProfileScreen} />
+      <Tab.Screen name="Accueil"    component={HomeScreen} />
+      <Tab.Screen name="Recherche"  component={SearchScreen} />
+      <Tab.Screen name="D\u00e9clarer"  component={DeclareScreen} />
+      <Tab.Screen name="Messages"   component={MessagesScreen} />
+      <Tab.Screen name="Profil"     component={ProfileScreen} />
     </Tab.Navigator>
   );
 }
@@ -64,14 +65,25 @@ function RootNavigator() {
         <Stack.Screen name="Auth" component={AuthScreen} />
       ) : (
         <>
-          <Stack.Screen name="Main"   component={HomeTabs} />
+          <Stack.Screen name="Main" component={HomeTabs} />
           <Stack.Screen
             name="Detail"
             component={DetailScreen}
-            options={{ headerShown: true, title: 'Détail', headerBackTitle: 'Retour',
+            options={{
+              headerShown: true, title: 'D\u00e9tail', headerBackTitle: 'Retour',
               headerStyle: { backgroundColor: COLORS.surface },
               headerTintColor: COLORS.primary,
               headerTitleStyle: { color: COLORS.text },
+            }}
+          />
+          <Stack.Screen
+            name="Chat"
+            component={ChatScreen}
+            options={{
+              headerShown: true, headerBackTitle: 'Retour',
+              headerStyle: { backgroundColor: COLORS.surface },
+              headerTintColor: COLORS.primary,
+              headerTitleStyle: { color: COLORS.text, fontSize: 16 },
             }}
           />
         </>
