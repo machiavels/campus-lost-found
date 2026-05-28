@@ -17,6 +17,18 @@ const DEMO = [
   { id:5, title:'Calculatrice TI-82', description:'Nom collé au dos.', type:'found', status:'OPEN', category:'ELECTRONICS', location:'Salle TD 12', createdAt:'2026-05-24', reporter:{username:'emma_b'} },
 ];
 
+// Normalise un item du backend vers le format attendu par les composants
+function normalizeItem(item) {
+  return {
+    ...item,
+    title:    item.title    || item.name || '',
+    type:     (item.type    || item.reportType || 'lost').toLowerCase(),
+    location: typeof item.location === 'object' ? item.location?.name : (item.location || ''),
+    category: typeof item.category === 'object' ? item.category?.name : (item.category || ''),
+    reporter: item.reporter || { username: 'inconnu' },
+  };
+}
+
 function relDate(d) {
   if (!d) return '';
   const diff = (Date.now() - new Date(d)) / 1000;
@@ -67,8 +79,9 @@ export default function HomeScreen({ navigation }) {
     try {
       if (!isRefresh) setLoading(true);
       const data = await api.getItems();
-      const list = data.items || data.data || data;
-      setItems(Array.isArray(list) ? list : DEMO);
+      const raw  = data.items || data.data || data;
+      const list = Array.isArray(raw) ? raw.map(normalizeItem) : DEMO;
+      setItems(list);
       setStats({
         lost:     list.filter(i => i.type === 'lost').length,
         found:    list.filter(i => i.type === 'found').length,
