@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { AppModeProvider } from './src/context/AppModeContext';
 import AuthScreen from './src/screens/AuthScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import SearchScreen from './src/screens/SearchScreen';
@@ -38,7 +39,7 @@ function HomeTabs() {
           const icons = {
             Accueil:   focused ? 'home'          : 'home-outline',
             Recherche: focused ? 'search'        : 'search-outline',
-            Déclarer:  focused ? 'add-circle'    : 'add-circle-outline',
+            'Déclarer':  focused ? 'add-circle'    : 'add-circle-outline',
             Messages:  focused ? 'chatbubbles'   : 'chatbubbles-outline',
             Profil:    focused ? 'person'        : 'person-outline',
           };
@@ -82,12 +83,14 @@ function RootNavigator() {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer>
-          <StatusBar style="auto" />
-          <RootNavigator />
-        </NavigationContainer>
-      </AuthProvider>
+      <AppModeProvider>
+        <AuthProvider>
+          <NavigationContainer>
+            <StatusBar style="auto" />
+            <RootNavigator />
+          </NavigationContainer>
+        </AuthProvider>
+      </AppModeProvider>
     </SafeAreaProvider>
   );
 }
