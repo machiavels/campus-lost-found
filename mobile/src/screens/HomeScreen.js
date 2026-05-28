@@ -42,7 +42,6 @@ function relDate(d) {
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
-/** Construit l'URL complète d'une photo (même logique que DetailScreen). */
 function thumbUrl(photos) {
   const first = Array.isArray(photos) && photos.length > 0 ? photos[0] : null;
   if (!first) return null;
@@ -59,13 +58,10 @@ function ItemCard({ item, onPress }) {
 
   return (
     <TouchableOpacity style={s.card} onPress={() => onPress(item)} activeOpacity={0.75}>
+      {/* Zone image : taille fixe 80×80, l'image s'y adapte */}
       <View style={s.cardImg}>
         {thumb ? (
-          <Image
-            source={{ uri: thumb }}
-            style={s.cardImgPhoto}
-            resizeMode="cover"
-          />
+          <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
         ) : (
           <Ionicons name="image-outline" size={28} color={COLORS.faint} />
         )}
@@ -162,7 +158,6 @@ export default function HomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Bandeau Démo / Backend */}
       <View style={s.modeBanner}>
         <View style={s.modeRow}>
           <Ionicons name={demoMode ? 'flask-outline' : 'cloud-outline'} size={15} color={demoMode ? COLORS.warn : COLORS.primary} />
@@ -180,9 +175,7 @@ export default function HomeScreen({ navigation }) {
         {demoMode && (
           <View style={s.modeRow}>
             <Ionicons name="shield-outline" size={15} color={adminDemo ? COLORS.error : COLORS.muted} />
-            <Text style={[s.modeLabel, { color: adminDemo ? COLORS.error : COLORS.muted }]}>
-              Vue admin
-            </Text>
+            <Text style={[s.modeLabel, { color: adminDemo ? COLORS.error : COLORS.muted }]}>Vue admin</Text>
             <Switch
               value={adminDemo}
               onValueChange={toggleAdminDemo}
@@ -258,17 +251,19 @@ const s = StyleSheet.create({
   statNum:         { fontSize: 22, fontWeight: FONT.bold, color: COLORS.primary },
   statLabel:       { fontSize: 11, color: COLORS.muted, marginTop: 2, textAlign: 'center' },
   sectionLabel:    { paddingHorizontal: SPACING.base, paddingBottom: 6, fontSize: 11, fontWeight: FONT.bold, color: COLORS.faint, letterSpacing: 1 },
-  card:            { flexDirection: 'row', backgroundColor: COLORS.surface, marginHorizontal: SPACING.base, marginBottom: SPACING.sm, borderRadius: RADIUS.xl, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  cardImg:         { width: 80, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
-  cardImgPhoto:    { width: 80, height: '100%' },
-  cardBody:        { flex: 1, padding: SPACING.md },
-  cardHeader:      { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, marginBottom: 4 },
-  cardTitle:       { fontSize: 15, fontWeight: FONT.semibold, color: COLORS.text, flex: 1 },
-  badge:           { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 },
-  badgeLabel:      { fontSize: 11, fontWeight: FONT.bold },
-  cardDesc:        { fontSize: 12, color: COLORS.muted, lineHeight: 18, marginBottom: 6 },
-  cardMeta:        { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cardLoc:         { fontSize: 11, color: COLORS.muted, flex: 1 },
-  cardDate:        { fontSize: 11, color: COLORS.faint },
-  empty:           { textAlign: 'center', color: COLORS.muted, marginTop: 60, fontSize: 15 },
+
+  // Card
+  card:         { flexDirection: 'row', backgroundColor: COLORS.surface, marginHorizontal: SPACING.base, marginBottom: SPACING.sm, borderRadius: RADIUS.xl, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
+  // Zone image : taille fixe, overflow hidden — l'image ne déborde plus jamais
+  cardImg:      { width: 80, minHeight: 80, backgroundColor: COLORS.offset, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  cardBody:     { flex: 1, padding: SPACING.md },
+  cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, marginBottom: 4 },
+  cardTitle:    { fontSize: 15, fontWeight: FONT.semibold, color: COLORS.text, flex: 1 },
+  badge:        { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 },
+  badgeLabel:   { fontSize: 11, fontWeight: FONT.bold },
+  cardDesc:     { fontSize: 12, color: COLORS.muted, lineHeight: 18, marginBottom: 6 },
+  cardMeta:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  cardLoc:      { fontSize: 11, color: COLORS.muted, flex: 1 },
+  cardDate:     { fontSize: 11, color: COLORS.faint },
+  empty:        { textAlign: 'center', color: COLORS.muted, marginTop: 60, fontSize: 15 },
 });
