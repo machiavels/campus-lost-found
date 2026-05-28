@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Campus Lost & Found",
+    "slug": "campus-lost-found",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#01696f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fr.campus.lostfound"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#01696f"
+      },
+      "package": "fr.campus.lostfound"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "scheme": "campuslostfound"
+  }
+}
