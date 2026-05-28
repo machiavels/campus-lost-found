@@ -1,16 +1,22 @@
 import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 
 const BASE = Constants.expoConfig?.extra?.apiUrl
   || process.env.EXPO_PUBLIC_API_URL
   || 'http://localhost:3000';
 
-let _token = null;
+let _token        = null;
+let _refreshToken = null;
+let _refreshing   = false;       // verrou pour éviter les rafales de refresh
+let _refreshQueue = [];          // requêtes en attente pendant le refresh
 
-export function setToken(t) { _token = t; }
-export function getToken()  { return _token; }
-export function getBase()   { return BASE.replace(/\/$/, ''); }
+export function setToken(t)        { _token = t; }
+export function getToken()         { return _token; }
+export function setRefreshToken(t) { _refreshToken = t; }
+export function getBase()          { return BASE.replace(/\/$/, ''); }
 
-async function request(method, path, body = null) {
+// ── Coeur HTTP ──────────────────────────────────────────────────────────────────
+async function doRequest(method, path, body = null) {
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = 'Bearer ' + _token;
 
@@ -23,24 +29,81 @@ async function request(method, path, body = null) {
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(
-    new Error(data.message || `Erreur ${res.status}`),
+    new Error(data.message || data.error || `Erreur ${res.status}`),
     { status: res.status, data }
   );
   return data;
+}
+
+// ── Refresh automatique sur 401 ────────────────────────────────────────────────────
+async function tryRefresh() {
+  if (!_refreshToken) throw new Error('no_refresh_token');
+
+  const res  = await fetch(BASE.replace(/\/$/, '') + '/api/auth/refresh', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ refreshToken: _refreshToken }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error('refresh_failed');
+
+  _token        = data.accessToken;
+  _refreshToken = data.refreshToken;
+  await SecureStore.setItemAsync('jwt_token',     data.accessToken);
+  await SecureStore.setItemAsync('refresh_token', data.refreshToken);
+  return data.accessToken;
+}
+
+async function request(method, path, body = null) {
+  try {
+    return await doRequest(method, path, body);
+  } catch (err) {
+    // Sur 401 : tenter un refresh une seule fois
+    if (err.status !== 401 || !_refreshToken) throw err;
+
+    if (_refreshing) {
+      // Une autre requête est déjà en train de refresher — on attend
+      return new Promise((resolve, reject) => {
+        _refreshQueue.push({ resolve, reject, method, path, body });
+      });
+    }
+
+    _refreshing = true;
+    try {
+      await tryRefresh();
+      // Rejouer toutes les requêtes en attente
+      _refreshQueue.forEach(q =>
+        doRequest(q.method, q.path, q.body).then(q.resolve).catch(q.reject)
+      );
+      _refreshQueue = [];
+      return await doRequest(method, path, body);
+    } catch (_) {
+      // Refresh impossible — déconnexion forcée
+      _refreshQueue.forEach(q => q.reject(new Error('session_expired')));
+      _refreshQueue = [];
+      _token        = null;
+      _refreshToken = null;
+      await SecureStore.deleteItemAsync('jwt_token').catch(() => {});
+      await SecureStore.deleteItemAsync('refresh_token').catch(() => {});
+      throw Object.assign(new Error('session_expired'), { status: 401 });
+    } finally {
+      _refreshing = false;
+    }
+  }
 }
 
 export const api = {
   // Auth
   login:    (email, password)           => request('POST', '/api/auth/login',    { email, password }),
   register: (username, email, password) => request('POST', '/api/auth/register', { username, email, password }),
-  logout:   ()                          => request('POST', '/api/auth/logout'),
+  logout:   ()                          => request('POST', '/api/auth/logout', { refreshToken: _refreshToken }),
 
   // Items
-  getItems:  (page = 1, limit = 20) => request('GET', `/api/items?page=${page}&limit=${limit}`),
-  getItem:   (id)                   => request('GET',   `/api/items/${id}`),
-  createItem:(body)                 => request('POST',  '/api/items', body),
-  updateItem:(id, body)             => request('PATCH', `/api/items/${id}`, body),
-  deleteItem:(id)                   => request('DELETE', `/api/items/${id}`),
+  getItems:   (page = 1, limit = 20) => request('GET', `/api/items?page=${page}&limit=${limit}`),
+  getItem:    (id)                   => request('GET',   `/api/items/${id}`),
+  createItem: (body)                 => request('POST',  '/api/items', body),
+  updateItem: (id, body)             => request('PATCH', `/api/items/${id}`, body),
+  deleteItem: (id)                   => request('DELETE', `/api/items/${id}`),
 
   // Photos
   uploadPhoto: async (itemId, asset) => {
@@ -75,10 +138,10 @@ export const api = {
   getMyClaims: ()                        => request('GET',  '/api/claims/my'),
 
   // Messages
-  getConversations: ()                          => request('GET',  '/api/messages/conversations'),
-  getThread:        (itemId, partnerId)         => request('GET',  `/api/messages/thread/${itemId}/${partnerId}`),
+  getConversations: ()                             => request('GET',  '/api/messages/conversations'),
+  getThread:        (itemId, partnerId)            => request('GET',  `/api/messages/thread/${itemId}/${partnerId}`),
   sendMessage:      (recipientId, itemId, content) => request('POST', '/api/messages', { recipientId, itemId, content }),
-  markRead:         (msgId)                     => request('PATCH', `/api/messages/${msgId}/read`),
+  markRead:         (msgId)                        => request('PATCH', `/api/messages/${msgId}/read`),
 
   // User
   getMe: () => request('GET', '/api/users/me'),
@@ -88,16 +151,13 @@ export const api = {
 };
 
 /**
- * Ouvre une connexion SSE vers /api/notifications/stream.
- * Retourne une fonction cleanup() pour fermer la connexion.
- *
- * onMessage(eventName, data) est appel\u00e9 pour chaque \u00e9v\u00e9nement re\u00e7u.
+ * SSE vers /api/notifications/stream.
+ * Retourne cleanup().
  */
 export function subscribeSSE(onMessage) {
   if (!_token) return () => {};
 
   const url = BASE.replace(/\/$/, '') + '/api/notifications/stream';
-  // React Native ne supporte pas EventSource natif — on utilise fetch en streaming
   let active = true;
   let reader  = null;
 
@@ -115,7 +175,7 @@ export function subscribeSSE(onMessage) {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const parts = buffer.split('\n\n');
-        buffer = parts.pop(); // garde le fragment incomplet
+        buffer = parts.pop();
         for (const block of parts) {
           let eventName = 'message';
           let dataStr   = '';
@@ -126,7 +186,7 @@ export function subscribeSSE(onMessage) {
           try { onMessage(eventName, JSON.parse(dataStr)); } catch (_) {}
         }
       }
-    } catch (_) { /* connexion ferm\u00e9e ou erreur r\u00e9seau */ }
+    } catch (_) {}
   })();
 
   return () => {

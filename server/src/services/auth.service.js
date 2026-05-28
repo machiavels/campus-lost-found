@@ -4,19 +4,18 @@ const crypto  = require('crypto');
 const Joi     = require('joi');
 const prisma  = require('../config/prisma');
 
-// ── Campus email domain whitelist (from .env) ──────────────────────────────────
+// ── Campus email domain whitelist (from .env) ─────────────────────────────────────────────
 const getAllowedDomains = () =>
   (process.env.ALLOWED_EMAIL_DOMAINS || 'eleve.isep.fr,isep.fr')
     .split(',')
     .map(d => d.trim());
 
-// ── Joi validation schemas ────────────────────────────────────────────
-
+// ── Joi validation schemas ───────────────────────────────────────────────
 exports.registerSchema = Joi.object({
   username: Joi.string().pattern(/^[a-zA-Z0-9_]+$/).min(3).max(30).required().messages({
     'string.pattern.base': "Le nom d'utilisateur ne doit contenir que des lettres, chiffres ou underscores",
-    'string.min':          "Le nom d'utilisateur doit comporter au moins 3 caractères",
-    'string.max':          "Le nom d'utilisateur ne peut pas dépasser 30 caractères",
+    'string.min':          "Le nom d'utilisateur doit comporter au moins 3 caract\u00e8res",
+    'string.max':          "Le nom d'utilisateur ne peut pas d\u00e9passer 30 caract\u00e8res",
     'any.required':        "Le nom d'utilisateur est requis",
   }),
   email: Joi.string()
@@ -32,10 +31,10 @@ exports.registerSchema = Joi.object({
     .messages({
       'string.email':  'Adresse e-mail invalide',
       'any.required':  "L'adresse e-mail est requise",
-      'email.domain':  `Seuls les emails institutionnels sont acceptés (${getAllowedDomains().join(', ')})`,
+      'email.domain':  `Seuls les emails institutionnels sont accept\u00e9s (${getAllowedDomains().join(', ')})`,
     }),
   password: Joi.string().min(8).required().messages({
-    'string.min':   'Le mot de passe doit comporter au moins 8 caractères',
+    'string.min':   'Le mot de passe doit comporter au moins 8 caract\u00e8res',
     'any.required': 'Le mot de passe est requis',
   }),
 });
@@ -50,18 +49,18 @@ exports.loginSchema = Joi.object({
   }),
 });
 
-// ── Campus email domain validator ────────────────────────────────────────────
+// ── Campus email domain validator ───────────────────────────────────────────────
 exports.validateEmailDomain = (email) => {
   const allowed = getAllowedDomains();
   const domain  = email.split('@')[1];
   if (!allowed.includes(domain)) {
-    const err = new Error(`Seuls les emails campus sont autorisés (${allowed.join(', ')})`);
+    const err = new Error(`Seuls les emails campus sont autoris\u00e9s (${allowed.join(', ')})`);
     err.statusCode = 403;
     throw err;
   }
 };
 
-// ── High-level register (used by controller + easily mockable in tests) ───────
+// ── High-level register ────────────────────────────────────────────────────────────
 exports.register = async ({ username, email, password }) => {
   exports.validateEmailDomain(email);
 
@@ -69,7 +68,7 @@ exports.register = async ({ username, email, password }) => {
     where: { OR: [{ email }, { username }] },
   });
   if (existing) {
-    const err = new Error("Email ou nom d'utilisateur déjà utilisé");
+    const err = new Error("Email ou nom d'utilisateur d\u00e9j\u00e0 utilis\u00e9");
     err.statusCode = 409;
     throw err;
   }
@@ -81,28 +80,25 @@ exports.register = async ({ username, email, password }) => {
   });
 };
 
-// ── Password helpers ──────────────────────────────────────────────────────
+// ── Password helpers ──────────────────────────────────────────────────────────────
 exports.hashPassword   = (plain) => bcrypt.hash(plain, 12);
 exports.verifyPassword = (plain, hash) => bcrypt.compare(plain, hash);
 
-// ── JWT — Access token (15 min) ───────────────────────────────────────────────
-// signToken() a été supprimé (payload minimal sans email/role — voir #41).
-// Utiliser generateAccessToken(user) pour tous les nouveaux appels.
+// ── JWT — Access token (durée depuis .env, défaut 45m) ──────────────────────────────────
 exports.generateAccessToken = (user) =>
   jwt.sign(
     { sub: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '45m' }
   );
 
-// ── Refresh token (7 days, stored in DB) ─────────────────────────────────────
+// ── Refresh token (7 days, stored in DB) ───────────────────────────────────────────────────
 const REFRESH_EXPIRY_DAYS = parseInt(process.env.REFRESH_TOKEN_EXPIRY_DAYS || '7', 10);
 
 exports.generateRefreshToken = async (userId) => {
   const token     = crypto.randomBytes(64).toString('hex');
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + REFRESH_EXPIRY_DAYS);
-
   await prisma.refreshToken.create({ data: { token, userId, expiresAt } });
   return token;
 };
@@ -120,17 +116,14 @@ exports.rotateRefreshToken = async (oldToken) => {
   }
   if (existing.expiresAt < new Date()) {
     await prisma.refreshToken.delete({ where: { token: oldToken } });
-    const err = new Error('Refresh token expiré, veuillez vous reconnecter');
+    const err = new Error('Refresh token expir\u00e9, veuillez vous reconnecter');
     err.statusCode = 401;
     throw err;
   }
 
-  // Rotation : supprimer l'ancien, émettre un nouveau
   await prisma.refreshToken.delete({ where: { token: oldToken } });
-
   const newRefreshToken = await exports.generateRefreshToken(existing.userId);
   const newAccessToken  = exports.generateAccessToken(existing.user);
-
   return { accessToken: newAccessToken, refreshToken: newRefreshToken };
 };
 
