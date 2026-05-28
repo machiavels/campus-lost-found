@@ -42,8 +42,8 @@ export const api = {
   updateItem:(id, body)        => request('PATCH',  `/api/items/${id}`, body),
 
   // Reference
-  getCategories: ()            => request('GET', '/api/categories'),
-  getLocations:  ()            => request('GET', '/api/locations'),
+  getCategories: () => request('GET', '/api/categories').then(r => r.categories ?? r),
+  getLocations:  () => request('GET', '/api/locations').then(r => r.locations ?? r),
 
   // Search
   search:    (q, filters = {}) => {
