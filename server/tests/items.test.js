@@ -27,7 +27,6 @@ describe('GET /api/items', () => {
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('items');
     expect(Array.isArray(res.body.items)).toBe(true);
-    // meta shape
     expect(res.body).toHaveProperty('meta');
     expect(typeof res.body.meta.total).toBe('number');
     expect(typeof res.body.meta.totalPages).toBe('number');
@@ -74,10 +73,102 @@ describe('POST /api/items', () => {
   });
 });
 
+// ─── POST /api/items — Joi validation ─────────────────────────────────────────
+describe('POST /api/items — Joi validation', () => {
+  it('returns 400 when reportType is invalid', async () => {
+    const res = await request(app)
+      .post('/api/items')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .field('name', 'Objet test')
+      .field('description', 'Description valide pour test')
+      .field('reportType', 'BANANA')
+      .field('categoryId', CATEGORY_ID)
+      .field('locationId', LOCATION_ID);
+    expect(res.status).toBe(400);
+    expect(res.body).toHaveProperty('details');
+  });
+
+  it('returns 400 when name is too short (1 char)', async () => {
+    const res = await request(app)
+      .post('/api/items')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .field('name', 'A')
+      .field('description', 'Description valide pour test')
+      .field('reportType', 'LOST')
+      .field('categoryId', CATEGORY_ID)
+      .field('locationId', LOCATION_ID);
+    expect(res.status).toBe(400);
+    expect(res.body.details[0]).toMatch(/2/);
+  });
+
+  it('returns 400 when name exceeds max length', async () => {
+    const res = await request(app)
+      .post('/api/items')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .field('name', 'A'.repeat(121))
+      .field('description', 'Description valide pour test')
+      .field('reportType', 'LOST')
+      .field('categoryId', CATEGORY_ID)
+      .field('locationId', LOCATION_ID);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when dateLostFound is in the future', async () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const res = await request(app)
+      .post('/api/items')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .field('name', 'Objet futur')
+      .field('description', 'Description valide pour test')
+      .field('reportType', 'LOST')
+      .field('categoryId', CATEGORY_ID)
+      .field('locationId', LOCATION_ID)
+      .field('dateLostFound', future);
+    expect(res.status).toBe(400);
+    expect(res.body.details[0]).toMatch(/futur/);
+  });
+
+  it('accepts a valid past dateLostFound', async () => {
+    if (!CATEGORY_ID || !LOCATION_ID) { return; }
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    const res = await request(app)
+      .post('/api/items')
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .field('name', 'Objet daté')
+      .field('description', 'Description valide pour test')
+      .field('reportType', 'LOST')
+      .field('categoryId', CATEGORY_ID)
+      .field('locationId', LOCATION_ID)
+      .field('dateLostFound', past);
+    expect([201, 200]).toContain(res.status);
+  });
+});
+
+// ─── PUT /api/items/:id — Joi validation ──────────────────────────────────────
+describe('PUT /api/items/:id — Joi validation', () => {
+  it('returns 400 when body is empty', async () => {
+    if (!ITEM_ID) { return; }
+    const res = await request(app)
+      .put(`/api/items/${ITEM_ID}`)
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when reportType is invalid', async () => {
+    if (!ITEM_ID) { return; }
+    const res = await request(app)
+      .put(`/api/items/${ITEM_ID}`)
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .send({ reportType: 'UNKNOWN' });
+    expect(res.status).toBe(400);
+  });
+});
+
 // ─── GET /api/items/:id ────────────────────────────────────────────────────────
 describe('GET /api/items/:id', () => {
   it('returns the item by id (as owner, item may be PENDING)', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app)
       .get(`/api/items/${ITEM_ID}`)
       .set('Authorization', `Bearer ${TOKEN}`);
@@ -94,7 +185,7 @@ describe('GET /api/items/:id', () => {
 // ─── PUT /api/items/:id ────────────────────────────────────────────────────────
 describe('PUT /api/items/:id', () => {
   it('updates the item when authenticated as owner', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app)
       .put(`/api/items/${ITEM_ID}`)
       .set('Authorization', `Bearer ${TOKEN}`)
@@ -103,7 +194,7 @@ describe('PUT /api/items/:id', () => {
   });
 
   it('returns 401 without token', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app)
       .put(`/api/items/${ITEM_ID}`)
       .send({ name: 'Hack' });
@@ -114,7 +205,7 @@ describe('PUT /api/items/:id', () => {
 // ─── PATCH /api/items/:id/close ────────────────────────────────────────────────
 describe('PATCH /api/items/:id/close', () => {
   it('closes the item when authenticated as owner', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app)
       .patch(`/api/items/${ITEM_ID}/close`)
       .set('Authorization', `Bearer ${TOKEN}`);
@@ -125,7 +216,7 @@ describe('PATCH /api/items/:id/close', () => {
 // ─── DELETE /api/items/:id ─────────────────────────────────────────────────────
 describe('DELETE /api/items/:id', () => {
   it('deletes the item when authenticated as owner', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app)
       .delete(`/api/items/${ITEM_ID}`)
       .set('Authorization', `Bearer ${TOKEN}`);
@@ -133,7 +224,7 @@ describe('DELETE /api/items/:id', () => {
   });
 
   it('returns 404 after deletion', async () => {
-    if (!ITEM_ID) return;
+    if (!ITEM_ID) { return; }
     const res = await request(app).get(`/api/items/${ITEM_ID}`);
     expect([404, 400]).toContain(res.status);
   });
