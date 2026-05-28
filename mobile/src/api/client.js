@@ -41,6 +41,10 @@ export const api = {
   createItem:(body)            => request('POST',  '/api/items', body),
   updateItem:(id, body)        => request('PATCH',  `/api/items/${id}`, body),
 
+  // Reference
+  getCategories: ()            => request('GET', '/api/categories'),
+  getLocations:  ()            => request('GET', '/api/locations'),
+
   // Search
   search:    (q, filters = {}) => {
     const p = new URLSearchParams();
