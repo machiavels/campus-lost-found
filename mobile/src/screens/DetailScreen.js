@@ -8,10 +8,23 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
 
+// Normalise un item du backend vers le format attendu par les composants
+function normalizeItem(item) {
+  if (!item) return item;
+  return {
+    ...item,
+    title:    item.title    || item.name || '',
+    type:     (item.type    || item.reportType || 'lost').toLowerCase(),
+    location: typeof item.location === 'object' ? (item.location?.name ?? '') : (item.location || ''),
+    category: typeof item.category === 'object' ? (item.category?.name ?? '') : (item.category || ''),
+    reporter: item.reporter || item.user || { username: 'inconnu' },
+  };
+}
+
 function relDate(d) {
   if (!d) return '—';
   const diff = (Date.now() - new Date(d)) / 1000;
-  if (diff < 86400) return 'Aujourd\'hui';
+  if (diff < 86400) return "Aujourd'hui";
   if (diff < 172800) return 'Hier';
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 }
@@ -19,7 +32,7 @@ function relDate(d) {
 export default function DetailScreen({ route, navigation }) {
   const { item: initialItem } = route.params;
   const { user } = useAuth();
-  const [item,       setItem]       = useState(initialItem);
+  const [item,       setItem]       = useState(normalizeItem(initialItem));
   const [claimModal, setClaimModal] = useState(false);
   const [claimMsg,   setClaimMsg]   = useState('');
   const [claimErr,   setClaimErr]   = useState('');
@@ -27,7 +40,9 @@ export default function DetailScreen({ route, navigation }) {
 
   useEffect(() => {
     navigation.setOptions({ title: item.title || 'Détail' });
-    api.getItem(item.id).then(data => setItem(data.item || data)).catch(() => {});
+    api.getItem(item.id)
+      .then(data => setItem(normalizeItem(data.item || data)))
+      .catch(() => {});
   }, []);
 
   const isOwner = user && (item.reporter?.id === user.id || item.userId === user.id);
@@ -43,14 +58,14 @@ export default function DetailScreen({ route, navigation }) {
       setClaimModal(false);
       setClaimMsg('');
       setItem(prev => ({ ...prev, status: 'CLAIMED' }));
-      Alert.alert('Réclamation envoyée !', 'Le propriétaire / déclarant sera notifié.');
+      Alert.alert('Réclamation envoyée !', 'Le propriétaire / déclarant sera notifié.');
     } catch (e) {
-      setClaimErr(e.data?.message || 'Erreur lors de l\'envoi');
+      setClaimErr(e.data?.message || "Erreur lors de l'envoi");
     } finally { setClaimLoad(false); }
   }
 
   async function markResolved() {
-    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
+    Alert.alert('Confirmer', 'Marquer cet objet comme rendu ?', [
       { text: 'Annuler', style: 'cancel' },
       { text: 'Confirmer', onPress: async () => {
         try {
@@ -67,7 +82,7 @@ export default function DetailScreen({ route, navigation }) {
     await Share.share({ message: `Campus Lost & Found — "${item.title}" @ ${item.location || 'campus'}` });
   }
 
-  const rep     = item.reporter || item.user || {};
+  const rep     = item.reporter || {};
   const initial = (rep.username || '?')[0].toUpperCase();
 
   return (
@@ -92,14 +107,14 @@ export default function DetailScreen({ route, navigation }) {
         {/* Info grid */}
         <View style={s.grid}>
           {[
-            { label: 'Catégorie',  val: item.category || '—' },
-            { label: 'Lieu',       val: item.location || item.locationFound || item.locationLost || '—' },
+            { label: 'Catégorie', val: item.category || '—' },
+            { label: 'Lieu',       val: item.location  || '—' },
             { label: 'Date',       val: relDate(item.createdAt || item.date) },
             { label: 'Statut',     val: STATUS_LABEL[item.status] || item.status || '—' },
           ].map(({ label, val }) => (
             <View key={label} style={s.gridItem}>
               <Text style={s.gridLabel}>{label}</Text>
-              <Text style={s.gridVal}>{val}</Text>
+              <Text style={s.gridVal}>{String(val)}</Text>
             </View>
           ))}
         </View>
@@ -118,17 +133,17 @@ export default function DetailScreen({ route, navigation }) {
       <View style={s.actions}>
         {status === 'OPEN' && !isOwner && type === 'found' && (
           <TouchableOpacity style={s.btnPrimary} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>📦  Réclamer cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>📦 Réclamer cet objet</Text>
           </TouchableOpacity>
         )}
         {status === 'OPEN' && !isOwner && type === 'lost' && (
           <TouchableOpacity style={s.btnSuccess} onPress={() => setClaimModal(true)}>
-            <Text style={s.btnPrimaryLabel}>✋  J'ai trouvé cet objet</Text>
+            <Text style={s.btnPrimaryLabel}>✋ J’ai trouvé cet objet</Text>
           </TouchableOpacity>
         )}
         {(status === 'OPEN' || status === 'CLAIMED') && isOwner && (
           <TouchableOpacity style={s.btnSuccess} onPress={markResolved}>
-            <Text style={s.btnPrimaryLabel}>✅  Marquer comme rendu</Text>
+            <Text style={s.btnPrimaryLabel}>✅ Marquer comme rendu</Text>
           </TouchableOpacity>
         )}
         {status === 'CLAIMED' && !isOwner && (
@@ -152,11 +167,11 @@ export default function DetailScreen({ route, navigation }) {
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setClaimModal(false)} />
         <View style={s.sheet}>
           <View style={s.sheetHandle} />
-          <Text style={s.sheetTitle}>{type === 'found' ? 'Réclamer cet objet' : 'Signaler que vous l\'avez trouvé'}</Text>
+          <Text style={s.sheetTitle}>{type === 'found' ? 'Réclamer cet objet' : "Signaler que vous l'avez trouvé"}</Text>
           <Text style={s.sheetDesc}>Décrivez brièvement comment vous pouvez le prouver.</Text>
           <TextInput
             style={s.claimInput} value={claimMsg} onChangeText={setClaimMsg}
-            placeholder="Ex : Mon téléphone a une coque transparente avec une photo de mon chien…"
+            placeholder="Ex : Mon téléphone a une coque transparente avec une photo de mon chien…"
             placeholderTextColor={COLORS.faint}
             multiline numberOfLines={4} textAlignVertical="top"
           />
