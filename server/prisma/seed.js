@@ -31,7 +31,7 @@ const LOCATIONS = [
 ];
 
 async function main() {
-  // ── Catégories & Lieux ────────────────────────────────────────────────────
+  // ── Catégories & Lieux
   console.log('🌱  Seeding categories & locations…');
   const cats = {};
   for (const cat of CATEGORIES) {
@@ -44,40 +44,40 @@ async function main() {
     locs[loc.name] = l;
   }
 
-  // ── Compte Admin ─────────────────────────────────────────────────────────
+  // ── Compte Admin
   console.log('🌱  Seeding admin account…');
   const adminHash = await bcrypt.hash('Admin1234!', 12);
   const admin = await prisma.user.upsert({
     where:  { email: 'admin@isep.fr' },
     update: {},
     create: {
-      username: 'admin',
-      email:    'admin@isep.fr',
-      password: adminHash,
-      role:     'ADMIN',
+      username:     'admin',
+      email:        'admin@isep.fr',
+      passwordHash: adminHash,
+      role:         'ADMIN',
     },
   });
 
-  // ── Comptes démo étudiants ────────────────────────────────────────────────
+  // ── Comptes démo étudiants
   console.log('🌱  Seeding demo users…');
-  const pass = await bcrypt.hash('Demo1234!', 12);
+  const hash = await bcrypt.hash('Demo1234!', 12);
   const alice = await prisma.user.upsert({
     where:  { email: 'alice@eleve.isep.fr' },
     update: {},
-    create: { username: 'alice', email: 'alice@eleve.isep.fr', password: pass, role: 'STUDENT' },
+    create: { username: 'alice', email: 'alice@eleve.isep.fr', passwordHash: hash, role: 'STUDENT' },
   });
   const bob = await prisma.user.upsert({
     where:  { email: 'bob@eleve.isep.fr' },
     update: {},
-    create: { username: 'bob', email: 'bob@eleve.isep.fr', password: pass, role: 'STUDENT' },
+    create: { username: 'bob', email: 'bob@eleve.isep.fr', passwordHash: hash, role: 'STUDENT' },
   });
   const charlie = await prisma.user.upsert({
     where:  { email: 'charlie@eleve.isep.fr' },
     update: {},
-    create: { username: 'charlie', email: 'charlie@eleve.isep.fr', password: pass, role: 'STUDENT' },
+    create: { username: 'charlie', email: 'charlie@eleve.isep.fr', passwordHash: hash, role: 'STUDENT' },
   });
 
-  // ── Annonces démo ────────────────────────────────────────────────────────
+  // ── Annonces démo
   console.log('🌱  Seeding demo items…');
   const items = [
     {
@@ -106,7 +106,7 @@ async function main() {
     },
     {
       title: 'MacBook Air 13" perdu',
-      description: 'MacBook Air argent avec sticker ISEP, perdu en salle informatique. Contient des travaux importants.',
+      description: 'MacBook Air argent avec sticker ISEP, perdu en salle informatique.',
       type: 'LOST', status: 'ACTIVE',
       userId: bob.id, categoryId: cats['Électronique'].id, locationId: locs['Salle informatique'].id,
     },
@@ -136,17 +136,17 @@ async function main() {
     createdItems.push(created);
   }
 
-  // ── Conversation démo ─────────────────────────────────────────────────────
-  console.log('🌱  Seeding demo conversation…');
-  const thread = await prisma.messageThread.create({
+  // ── Conversations démo
+  console.log('🌱  Seeding demo conversations…');
+  await prisma.messageThread.create({
     data: {
       itemId: createdItems[0].id,
       participants: { connect: [{ id: alice.id }, { id: bob.id }] },
       messages: {
         create: [
           { senderId: bob.id,   content: 'Bonjour ! Tu as perdu des AirPods ? Je crois les avoir trouvés à la biblio.' },
-          { senderId: alice.id, content: 'Oui c\'est moi !! Il y a le prénom Alice gravé dessus ?' },
-          { senderId: bob.id,   content: 'Exactement ! Je suis disponible demain matin pour te les rendre à l\'accueil.' },
+          { senderId: alice.id, content: "Oui c'est moi !! Il y a le prénom Alice gravé dessus ?" },
+          { senderId: bob.id,   content: "Exactement ! Je suis disponible demain matin pour te les rendre à l'accueil." },
           { senderId: alice.id, content: 'Super merci beaucoup ! Je serai là vers 9h.' },
           { senderId: bob.id,   content: 'Parfait, à demain 👍' },
         ],
@@ -154,7 +154,6 @@ async function main() {
     },
   });
 
-  // Deuxième conversation
   await prisma.messageThread.create({
     data: {
       itemId: createdItems[2].id,
@@ -162,15 +161,15 @@ async function main() {
       messages: {
         create: [
           { senderId: alice.id,   content: 'Salut, tu cherches une veste North Face noire ?' },
-          { senderId: charlie.id, content: 'Oui ! Tu l\'as trouvée ?' },
-          { senderId: alice.id,   content: 'Je crois avoir vu quelqu\'un la déposer en secretariat.' },
+          { senderId: charlie.id, content: "Oui ! Tu l'as trouvée ?" },
+          { senderId: alice.id,   content: "Je crois avoir vu quelqu'un la déposer en secrétariat." },
           { senderId: charlie.id, content: 'Je vais vérifier, merci du tuyau !' },
         ],
       },
     },
   });
 
-  // ── Réclamation démo ──────────────────────────────────────────────────────
+  // ── Réclamation démo
   console.log('🌱  Seeding demo claim…');
   await prisma.claim.create({
     data: {
@@ -181,25 +180,25 @@ async function main() {
     },
   });
 
-  // ── Notifications démo ────────────────────────────────────────────────────
+  // ── Notifications démo
   console.log('🌱  Seeding demo notifications…');
   await prisma.notification.createMany({
     data: [
       { userId: alice.id,   type: 'NEW_MESSAGE',  message: 'Bob vous a envoyé un message concernant votre annonce.' },
       { userId: charlie.id, type: 'CLAIM_UPDATE',  message: 'Votre réclamation pour le trousseau de clés est en attente de validation.' },
-      { userId: bob.id,     type: 'ITEM_CLAIMED',  message: 'Quelqu\'un a réclamé votre annonce "Trousseau de clés trouvé".' },
+      { userId: bob.id,     type: 'ITEM_CLAIMED',  message: "Quelqu'un a réclamé votre annonce \"Trousseau de clés trouvé\"." },
       { userId: alice.id,   type: 'NEW_MESSAGE',  message: 'Charlie vous a envoyé un message concernant la veste North Face.' },
     ],
     skipDuplicates: true,
   });
 
   console.log('\n✅  Seed complet !');
-  console.log('─────────────────────────────────────');
-  console.log('👤  Admin     : admin@isep.fr       / Admin1234!');
-  console.log('👤  Alice     : alice@eleve.isep.fr / Demo1234!');
-  console.log('👤  Bob       : bob@eleve.isep.fr   / Demo1234!');
-  console.log('👤  Charlie   : charlie@eleve.isep.fr / Demo1234!');
-  console.log('─────────────────────────────────────');
+  console.log('────────────────────────────────────────');
+  console.log('👤  Admin   : admin@isep.fr          / Admin1234!');
+  console.log('👤  Alice   : alice@eleve.isep.fr    / Demo1234!');
+  console.log('👤  Bob     : bob@eleve.isep.fr      / Demo1234!');
+  console.log('👤  Charlie : charlie@eleve.isep.fr  / Demo1234!');
+  console.log('────────────────────────────────────────');
 }
 
 main()
