@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 
 export default function NewItemPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ title: '', description: '', type: 'LOST', categoryId: '', locationId: '' });
+  const [form, setForm] = useState({ name: '', description: '', reportType: 'LOST', categoryId: '', locationId: '' });
   const [photos, setPhotos] = useState([]);
 
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => referenceApi.categories(), select: (r) => r.data });
@@ -38,7 +38,7 @@ export default function NewItemPage() {
           <div className="flex gap-4">
             {['LOST', 'FOUND'].map((t) => (
               <label key={t} className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="type" value={t} checked={form.type === t} onChange={() => set('type', t)} />
+                <input type="radio" name="reportType" value={t} checked={form.reportType === t} onChange={() => set('reportType', t)} />
                 <span>{t === 'LOST' ? '😢 Perdu' : '🎉 Trouvé'}</span>
               </label>
             ))}
@@ -46,7 +46,7 @@ export default function NewItemPage() {
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Titre *</label>
-          <input className="input" value={form.title} onChange={(e) => set('title', e.target.value)} required />
+          <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} required />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
