@@ -22,14 +22,16 @@ export function AuthProvider({ children }) {
 
   const login = async (credentials) => {
     const { data } = await authApi.login(credentials);
-    localStorage.setItem('accessToken', data.accessToken);
+    const token = data.accessToken ?? data.token;
+    localStorage.setItem('accessToken', token);
     setUser(data.user);
     return data.user;
   };
 
   const register = async (payload) => {
     const { data } = await authApi.register(payload);
-    localStorage.setItem('accessToken', data.accessToken);
+    const token = data.accessToken ?? data.token;
+    localStorage.setItem('accessToken', token);
     setUser(data.user);
     return data.user;
   };
