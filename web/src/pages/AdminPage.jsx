@@ -29,15 +29,15 @@ export default function AdminPage() {
   });
 
   const moderateMutation = useMutation({
-    mutationFn: ({ id, action }) => adminApi.moderateItem(id, action),
+    mutationFn: ({ id, status }) => adminApi.moderateItem(id, status),
     onSuccess: () => { qc.invalidateQueries(['admin', 'items']); toast.success('Annonce mise à jour'); },
-    onError: () => toast.error('Erreur'),
+    onError: (err) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
   const toggleUserMutation = useMutation({
     mutationFn: ({ id, status }) => adminApi.setUserStatus(id, status),
     onSuccess: () => { qc.invalidateQueries(['admin', 'users']); toast.success('Utilisateur mis à jour'); },
-    onError: () => toast.error('Erreur'),
+    onError: (err) => toast.error(err.response?.data?.error || 'Erreur'),
   });
 
   const tabs = ['items', 'users'];
@@ -82,8 +82,9 @@ export default function AdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                        item.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                        item.status === 'VERIFIED' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                        item.status === 'PENDING'  ? 'bg-yellow-100 text-yellow-700' :
+                        item.status === 'VERIFIED' ? 'bg-green-100 text-green-700'  :
+                        item.status === 'REJECTED' ? 'bg-red-100 text-red-700'      : 'bg-gray-100 text-gray-700'
                       }`}>{item.status}</span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">{item.reporter?.username}</td>
@@ -92,13 +93,15 @@ export default function AdminPage() {
                     </td>
                     <td className="px-4 py-3 flex gap-2">
                       <button title="Valider"
-                        onClick={() => moderateMutation.mutate({ id: item.id, action: 'APPROVED' })}
-                        className="text-green-600 hover:text-green-800">
+                        onClick={() => moderateMutation.mutate({ id: item.id, status: 'VERIFIED' })}
+                        className="text-green-600 hover:text-green-800 disabled:opacity-40"
+                        disabled={item.status === 'VERIFIED'}>
                         <CheckCircle size={18} />
                       </button>
                       <button title="Rejeter"
-                        onClick={() => moderateMutation.mutate({ id: item.id, action: 'REJECTED' })}
-                        className="text-red-500 hover:text-red-700">
+                        onClick={() => moderateMutation.mutate({ id: item.id, status: 'REJECTED' })}
+                        className="text-red-500 hover:text-red-700 disabled:opacity-40"
+                        disabled={item.status === 'REJECTED'}>
                         <XCircle size={18} />
                       </button>
                     </td>

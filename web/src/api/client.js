@@ -72,11 +72,11 @@ export const authApi = {
 
 // ── Items
 export const itemsApi = {
-  list:   (params)     => api.get('/items', { params }),
-  get:    (id)         => api.get(`/items/${id}`),
-  create: (form)       => api.post('/items', form, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  update: (id, data)   => api.put(`/items/${id}`, data),
-  delete: (id)         => api.delete(`/items/${id}`),
+  list:   (params)   => api.get('/items', { params }),
+  get:    (id)       => api.get(`/items/${id}`),
+  create: (form)     => api.post('/items', form, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  update: (id, data) => api.put(`/items/${id}`, data),
+  delete: (id)       => api.delete(`/items/${id}`),
 };
 
 // ── Search
@@ -94,10 +94,10 @@ export const messagesApi = {
 
 // ── Claims
 export const claimsApi = {
-  create:     (data) => api.post('/claims', data),
+  create:     (data)   => api.post('/claims', data),
   getForItem: (itemId) => api.get(`/claims/item/${itemId}`),
-  approve:    (id)   => api.patch(`/claims/${id}/approve`),
-  reject:     (id)   => api.patch(`/claims/${id}/reject`),
+  approve:    (id)     => api.patch(`/claims/${id}/approve`),
+  reject:     (id)     => api.patch(`/claims/${id}/reject`),
 };
 
 // ── Notifications
@@ -115,26 +115,26 @@ export const referenceApi = {
 
 // ── Admin
 export const adminApi = {
-  // Items (modération)
-  pendingItems:  (params)           => api.get('/admin/items', { params }),
-  moderateItem:  (id, action, reason) => api.patch(`/admin/items/${id}/moderate`, { action, reason }),
-  verifyItem:    (id)               => api.patch(`/admin/items/${id}/verify`),
-  rejectItem:    (id, reason)       => api.patch(`/admin/items/${id}/reject`, { reason }),
+  // Items (modération) — le body attendu est { status: 'VERIFIED'|'REJECTED', moderationNote? }
+  pendingItems:  (params)               => api.get('/admin/items', { params }),
+  moderateItem:  (id, status, note)     => api.patch(`/admin/items/${id}/moderate`, { status, ...(note ? { moderationNote: note } : {}) }),
+  verifyItem:    (id)                   => api.patch(`/admin/items/${id}/verify`),
+  rejectItem:    (id, note)             => api.patch(`/admin/items/${id}/reject`, { moderationNote: note }),
   // Users
-  users:         (params)           => api.get('/admin/users', { params }),
-  getUser:       (id)               => api.get(`/admin/users/${id}`),
-  updateUser:    (id, data)         => api.put(`/admin/users/${id}`, data),
-  setUserStatus: (id, status)       => api.patch(`/admin/users/${id}/status`, { status }),
-  changeRole:    (id, role)         => api.patch(`/admin/users/${id}/role`, { role }),
-  toggleUser:    (id)               => api.patch(`/admin/users/${id}/toggle`),
+  users:         (params)               => api.get('/admin/users', { params }),
+  getUser:       (id)                   => api.get(`/admin/users/${id}`),
+  updateUser:    (id, data)             => api.put(`/admin/users/${id}`, data),
+  setUserStatus: (id, status)           => api.patch(`/admin/users/${id}/status`, { status }),
+  changeRole:    (id, role)             => api.patch(`/admin/users/${id}/role`, { role }),
+  toggleUser:    (id)                   => api.patch(`/admin/users/${id}/toggle`),
   // Catégories
-  categories:        ()             => api.get('/admin/categories'),
-  createCategory:    (data)         => api.post('/admin/categories', data),
-  updateCategory:    (id, data)     => api.put(`/admin/categories/${id}`, data),
-  deleteCategory:    (id)           => api.delete(`/admin/categories/${id}`),
+  categories:     ()                    => api.get('/admin/categories'),
+  createCategory: (data)                => api.post('/admin/categories', data),
+  updateCategory: (id, data)            => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id)                  => api.delete(`/admin/categories/${id}`),
   // Lieux
-  locations:         ()             => api.get('/admin/locations'),
-  createLocation:    (data)         => api.post('/admin/locations', data),
-  updateLocation:    (id, data)     => api.put(`/admin/locations/${id}`, data),
-  deleteLocation:    (id)           => api.delete(`/admin/locations/${id}`),
+  locations:      ()                    => api.get('/admin/locations'),
+  createLocation: (data)                => api.post('/admin/locations', data),
+  updateLocation: (id, data)            => api.put(`/admin/locations/${id}`, data),
+  deleteLocation: (id)                  => api.delete(`/admin/locations/${id}`),
 };
