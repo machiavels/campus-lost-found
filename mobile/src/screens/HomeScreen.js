@@ -1,13 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, RefreshControl, ActivityIndicator,
+  StyleSheet, RefreshControl, ActivityIndicator, Image, StyleSheet as RN,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE } from '../theme';
+
+const POLL_MS = 30_000; // rafraîchissement automatique toutes les 30 s
 
 const DEMO = [
   { id:1, title:'MacBook Pro 14" gris', description:'Retrouvé sous une table côté fenêtre.', type:'found', status:'OPEN', category:'ELECTRONICS', location:'Bibliothèque centrale', createdAt:'2026-05-27', reporter:{username:'alice_d'} },
@@ -27,13 +30,32 @@ function relDate(d) {
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 }
 
+function getBase() {
+  // même logique que client.js — à centraliser dans un helper partagé si besoin
+  const { API_URL } = require('../api/client');
+  if (API_URL) return API_URL.replace(/\/api$/, '');
+  return '';
+}
+
+function thumbUrl(photos) {
+  if (!Array.isArray(photos) || photos.length === 0) return null;
+  const raw = photos[0]?.url || photos[0]?.path || '';
+  if (!raw) return null;
+  if (raw.startsWith('http')) return raw;
+  try { return getBase() + raw; } catch { return null; }
+}
+
 function ItemCard({ item, onPress }) {
-  const type = item.type || 'lost';
+  const type  = item.type || 'lost';
   const badge = TYPE_BADGE[type] || TYPE_BADGE.lost;
+  const thumb = thumbUrl(item.photos);
   return (
     <TouchableOpacity style={s.card} onPress={() => onPress(item)} activeOpacity={0.75}>
-      <View style={s.cardImgPlaceholder}>
-        <Ionicons name="image-outline" size={28} color={COLORS.faint} />
+      <View style={s.cardImg}>
+        {thumb
+          ? <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          : <Ionicons name="image-outline" size={28} color={COLORS.faint} />
+        }
       </View>
       <View style={s.cardBody}>
         <View style={s.cardHeader}>
@@ -57,24 +79,25 @@ function ItemCard({ item, onPress }) {
 
 export default function HomeScreen({ navigation }) {
   const { user } = useAuth();
-  const [items,     setItems]     = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [refreshing,setRefreshing]= useState(false);
-  const [stats,     setStats]     = useState({ lost: 0, found: 0, resolved: 0 });
-  const [error,     setError]     = useState('');
+  const [items,      setItems]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats,      setStats]      = useState({ lost: 0, found: 0, resolved: 0 });
+  const pollRef = useRef(null);
 
   const load = useCallback(async (isRefresh = false) => {
     try {
       if (!isRefresh) setLoading(true);
       const data = await api.getItems();
       const list = data.items || data.data || data;
-      setItems(Array.isArray(list) ? list : DEMO);
+      const arr  = Array.isArray(list) ? list : DEMO;
+      setItems(arr);
       setStats({
-        lost:     list.filter(i => i.type === 'lost').length,
-        found:    list.filter(i => i.type === 'found').length,
-        resolved: list.filter(i => i.status === 'RESOLVED').length,
+        lost:     arr.filter(i => i.type === 'lost').length,
+        found:    arr.filter(i => i.type === 'found').length,
+        resolved: arr.filter(i => i.status === 'RESOLVED').length,
       });
-    } catch (e) {
+    } catch {
       setItems(DEMO);
       setStats({ lost: 2, found: 3, resolved: 1 });
     } finally {
@@ -83,7 +106,15 @@ export default function HomeScreen({ navigation }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, []);
+  // 1️⃣ Rechargement à chaque fois que l'onglet devient actif
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      // 2️⃣ Polling toutes les 30 s pendant que l'écran est au premier plan
+      pollRef.current = setInterval(() => load(true), POLL_MS);
+      return () => clearInterval(pollRef.current);
+    }, [load])
+  );
 
   const openDetail = (item) => navigation.navigate('Detail', { item });
 
@@ -121,8 +152,9 @@ export default function HomeScreen({ navigation }) {
           </>
         }
         ListEmptyComponent={
-          loading ? <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
-          : <View style={s.empty}><Ionicons name="file-tray-outline" size={40} color={COLORS.faint} /><Text style={s.emptyText}>Aucun objet pour l\'instant</Text></View>
+          loading
+            ? <ActivityIndicator style={{ marginTop: 40 }} color={COLORS.primary} />
+            : <View style={s.empty}><Ionicons name="file-tray-outline" size={40} color={COLORS.faint} /><Text style={s.emptyText}>Aucun objet pour l\'instant</Text></View>
         }
         renderItem={({ item }) => <ItemCard item={item} onPress={openDetail} />}
         contentContainerStyle={{ padding: SPACING.base, paddingBottom: 80 }}
@@ -146,9 +178,9 @@ const s = StyleSheet.create({
   statNum:     { fontSize: 22, fontWeight: FONT.bold, color: COLORS.primary },
   statLabel:   { fontSize: 11, color: COLORS.muted, marginTop: 2 },
   sectionLabel:{ fontSize: 11, fontWeight: FONT.bold, color: COLORS.muted, letterSpacing: 1, marginBottom: SPACING.sm },
-  card:        { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, marginBottom: SPACING.md, overflow: 'hidden' },
-  cardImgPlaceholder: { height: 80, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center' },
-  cardBody:    { padding: SPACING.md },
+  card:        { backgroundColor: COLORS.surface, borderRadius: RADIUS.xl, borderWidth: 1, borderColor: COLORS.border, marginBottom: SPACING.md, overflow: 'hidden', flexDirection: 'row' },
+  cardImg:     { width: 80, minHeight: 80, backgroundColor: COLORS.offset, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  cardBody:    { flex: 1, padding: SPACING.md },
   cardHeader:  { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
   cardTitle:   { fontSize: 15, fontWeight: FONT.semibold, color: COLORS.text, flex: 1 },
   badge:       { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3 },
