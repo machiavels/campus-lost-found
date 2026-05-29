@@ -1,14 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, RefreshControl, ActivityIndicator, Switch, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { api, getBase } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useAppMode } from '../context/AppModeContext';
-import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE, STATUS_LABEL } from '../theme';
+import { COLORS, SPACING, RADIUS, FONT, TYPE_BADGE } from '../theme';
+
+const POLL_MS = 30_000;
 
 const DEMO = [
   { id:'demo-1', title:'MacBook Pro 14" gris', description:'Retrouvé sous une table côté fenêtre.', type:'found', status:'OPEN', category:'Électronique', location:'Bibliothèque centrale', createdAt:'2026-05-27', reporter:{id:'u1', username:'alice_d'} },
@@ -58,7 +61,6 @@ function ItemCard({ item, onPress }) {
 
   return (
     <TouchableOpacity style={s.card} onPress={() => onPress(item)} activeOpacity={0.75}>
-      {/* Zone image : taille fixe 80×80, l'image s'y adapte */}
       <View style={s.cardImg}>
         {thumb ? (
           <Image source={{ uri: thumb }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -89,10 +91,11 @@ function ItemCard({ item, onPress }) {
 export default function HomeScreen({ navigation }) {
   const { user }                          = useAuth();
   const { demoMode, adminDemo, toggleDemo, toggleAdminDemo } = useAppMode();
-  const [items,     setItems]     = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [refreshing,setRefreshing]= useState(false);
-  const [stats,     setStats]     = useState({ lost: 0, found: 0, resolved: 0 });
+  const [items,      setItems]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats,      setStats]      = useState({ lost: 0, found: 0, resolved: 0 });
+  const pollRef = useRef(null);
 
   const load = useCallback(async (isRefresh = false) => {
     try {
@@ -128,7 +131,16 @@ export default function HomeScreen({ navigation }) {
     }
   }, [demoMode, adminDemo]);
 
-  useEffect(() => { load(); }, [load]);
+  // Rechargement au focus + polling 30s
+  useFocusEffect(
+    useCallback(() => {
+      load();
+      if (!demoMode) {
+        pollRef.current = setInterval(() => load(true), POLL_MS);
+      }
+      return () => clearInterval(pollRef.current);
+    }, [load, demoMode])
+  );
 
   const openDetail = (item) => navigation.navigate('Detail', { item });
 
@@ -251,10 +263,7 @@ const s = StyleSheet.create({
   statNum:         { fontSize: 22, fontWeight: FONT.bold, color: COLORS.primary },
   statLabel:       { fontSize: 11, color: COLORS.muted, marginTop: 2, textAlign: 'center' },
   sectionLabel:    { paddingHorizontal: SPACING.base, paddingBottom: 6, fontSize: 11, fontWeight: FONT.bold, color: COLORS.faint, letterSpacing: 1 },
-
-  // Card
   card:         { flexDirection: 'row', backgroundColor: COLORS.surface, marginHorizontal: SPACING.base, marginBottom: SPACING.sm, borderRadius: RADIUS.xl, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border },
-  // Zone image : taille fixe, overflow hidden — l'image ne déborde plus jamais
   cardImg:      { width: 80, minHeight: 80, backgroundColor: COLORS.offset, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   cardBody:     { flex: 1, padding: SPACING.md },
   cardHeader:   { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6, marginBottom: 4 },
