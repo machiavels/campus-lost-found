@@ -59,7 +59,7 @@ api.interceptors.response.use(
 
       try {
         const { data } = await api.post('/auth/refresh');
-        const newToken = data.accessToken;
+        const newToken = data.accessToken ?? data.token;
         localStorage.setItem('accessToken', newToken);
         processQueue(null, newToken);
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
@@ -98,7 +98,7 @@ export const itemsApi = {
 
 // ── Search ────────────────────────────────────────────────────────────────────
 export const searchApi = {
-  items: (params) => api.get('/search/items', { params }),
+  items: (params) => api.get('/search', { params }),
 };
 
 // ── Messages ─────────────────────────────────────────────────────────────────
