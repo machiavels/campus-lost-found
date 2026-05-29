@@ -22,9 +22,14 @@ export default function ItemsPage() {
     select: (r) => r.data,
   });
 
+  // Strip empty string params before sending to API
+  const cleanParams = Object.fromEntries(
+    Object.entries(filters).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+  );
+
   const { data, isLoading } = useQuery({
     queryKey: ['search', filters],
-    queryFn: () => searchApi.items(filters),
+    queryFn: () => searchApi.items(cleanParams),
     select: (r) => r.data,
     keepPreviousData: true,
   });
