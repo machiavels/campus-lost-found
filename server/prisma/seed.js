@@ -50,12 +50,7 @@ async function main() {
   const admin = await prisma.user.upsert({
     where:  { email: 'admin@isep.fr' },
     update: {},
-    create: {
-      username:     'admin',
-      email:        'admin@isep.fr',
-      passwordHash: adminHash,
-      role:         'ADMIN',
-    },
+    create: { username: 'admin', email: 'admin@isep.fr', passwordHash: adminHash, role: 'ADMIN' },
   });
 
   // ── Comptes démo étudiants
@@ -79,104 +74,87 @@ async function main() {
 
   // ── Annonces démo
   console.log('🌱  Seeding demo items…');
-  const items = [
+  const itemsData = [
     {
-      title: 'AirPods Pro perdus',
+      name: 'AirPods Pro perdus',
       description: 'AirPods Pro blancs avec boîtier, perdus vendredi après-midi. Prénom gravé "Alice" sur le boîtier.',
-      type: 'LOST', status: 'ACTIVE',
-      userId: alice.id, categoryId: cats['Électronique'].id, locationId: locs['Bibliothèque'].id,
+      reportType: 'LOST', status: 'VERIFIED',
+      reporterId: alice.id, categoryId: cats['Électronique'].id, locationId: locs['Bibliothèque'].id,
     },
     {
-      title: 'Trousseau de clés trouvé',
+      name: 'Trousseau de clés trouvé',
       description: 'Trousseau avec 3 clés et un porte-clés rouge, trouvé près des casiers du couloir B.',
-      type: 'FOUND', status: 'ACTIVE',
-      userId: bob.id, categoryId: cats['Clés'].id, locationId: locs["Hall d'entrée"].id,
+      reportType: 'FOUND', status: 'VERIFIED',
+      reporterId: bob.id, categoryId: cats['Clés'].id, locationId: locs["Hall d'entrée"].id,
     },
     {
-      title: 'Veste North Face noire perdue',
+      name: 'Veste North Face noire perdue',
       description: 'Taille M, perdue après le cours de maths du mardi matin.',
-      type: 'LOST', status: 'ACTIVE',
-      userId: charlie.id, categoryId: cats['Vêtements'].id, locationId: locs['Amphithéâtre A'].id,
+      reportType: 'LOST', status: 'VERIFIED',
+      reporterId: charlie.id, categoryId: cats['Vêtements'].id, locationId: locs['Amphithéâtre A'].id,
     },
     {
-      title: 'Carte étudiante trouvée',
+      name: 'Carte étudiante trouvée',
       description: 'Carte au nom de "Dupont Thomas" trouvée à la cafétéria.',
-      type: 'FOUND', status: 'ACTIVE',
-      userId: alice.id, categoryId: cats['Documents'].id, locationId: locs['Cafétéria'].id,
+      reportType: 'FOUND', status: 'VERIFIED',
+      reporterId: alice.id, categoryId: cats['Documents'].id, locationId: locs['Cafétéria'].id,
     },
     {
-      title: 'MacBook Air 13" perdu',
+      name: 'MacBook Air 13" perdu',
       description: 'MacBook Air argent avec sticker ISEP, perdu en salle informatique.',
-      type: 'LOST', status: 'ACTIVE',
-      userId: bob.id, categoryId: cats['Électronique'].id, locationId: locs['Salle informatique'].id,
+      reportType: 'LOST', status: 'VERIFIED',
+      reporterId: bob.id, categoryId: cats['Électronique'].id, locationId: locs['Salle informatique'].id,
     },
     {
-      title: 'Lunettes de vue trouvées',
+      name: 'Lunettes de vue trouvées',
       description: 'Monture noire rectangulaire, trouvées sur une table de la bibliothèque.',
-      type: 'FOUND', status: 'ACTIVE',
-      userId: charlie.id, categoryId: cats['Accessoires'].id, locationId: locs['Bibliothèque'].id,
+      reportType: 'FOUND', status: 'VERIFIED',
+      reporterId: charlie.id, categoryId: cats['Accessoires'].id, locationId: locs['Bibliothèque'].id,
     },
     {
-      title: 'Manuel Algorithmique L3',
+      name: 'Manuel Algorithmique L3',
       description: 'Livre "Introduction aux algorithmes" édition 3, avec annotations en rouge.',
-      type: 'LOST', status: 'ACTIVE',
-      userId: alice.id, categoryId: cats['Livres'].id, locationId: locs['Amphithéâtre B'].id,
+      reportType: 'LOST', status: 'PENDING',
+      reporterId: alice.id, categoryId: cats['Livres'].id, locationId: locs['Amphithéâtre B'].id,
     },
     {
-      title: 'Casque Sony WH-1000XM5 trouvé',
+      name: 'Casque Sony WH-1000XM5 trouvé',
       description: 'Casque noir dans son étui, laissé au gymnase après la session sport de jeudi.',
-      type: 'FOUND', status: 'CLAIMED',
-      userId: bob.id, categoryId: cats['Électronique'].id, locationId: locs['Gymnase'].id,
+      reportType: 'FOUND', status: 'CLAIMED',
+      reporterId: bob.id, categoryId: cats['Électronique'].id, locationId: locs['Gymnase'].id,
     },
   ];
 
   const createdItems = [];
-  for (const item of items) {
+  for (const item of itemsData) {
     const created = await prisma.item.create({ data: item });
     createdItems.push(created);
   }
 
-  // ── Conversations démo
-  console.log('🌱  Seeding demo conversations…');
-  await prisma.messageThread.create({
-    data: {
-      itemId: createdItems[0].id,
-      participants: { connect: [{ id: alice.id }, { id: bob.id }] },
-      messages: {
-        create: [
-          { senderId: bob.id,   content: 'Bonjour ! Tu as perdu des AirPods ? Je crois les avoir trouvés à la biblio.' },
-          { senderId: alice.id, content: "Oui c'est moi !! Il y a le prénom Alice gravé dessus ?" },
-          { senderId: bob.id,   content: "Exactement ! Je suis disponible demain matin pour te les rendre à l'accueil." },
-          { senderId: alice.id, content: 'Super merci beaucoup ! Je serai là vers 9h.' },
-          { senderId: bob.id,   content: 'Parfait, à demain 👍' },
-        ],
-      },
-    },
-  });
-
-  await prisma.messageThread.create({
-    data: {
-      itemId: createdItems[2].id,
-      participants: { connect: [{ id: charlie.id }, { id: alice.id }] },
-      messages: {
-        create: [
-          { senderId: alice.id,   content: 'Salut, tu cherches une veste North Face noire ?' },
-          { senderId: charlie.id, content: "Oui ! Tu l'as trouvée ?" },
-          { senderId: alice.id,   content: "Je crois avoir vu quelqu'un la déposer en secrétariat." },
-          { senderId: charlie.id, content: 'Je vais vérifier, merci du tuyau !' },
-        ],
-      },
-    },
+  // ── Messages démo (directs entre users liés à un item)
+  console.log('🌱  Seeding demo messages…');
+  await prisma.message.createMany({
+    data: [
+      { senderId: bob.id,     recipientId: alice.id,   itemId: createdItems[0].id, content: 'Bonjour ! Tu as perdu des AirPods ? Je crois les avoir trouvés à la biblio.' },
+      { senderId: alice.id,   recipientId: bob.id,     itemId: createdItems[0].id, content: "Oui c'est moi !! Il y a le prénom Alice gravé dessus ?" },
+      { senderId: bob.id,     recipientId: alice.id,   itemId: createdItems[0].id, content: "Exactement ! Je suis disponible demain matin pour te les rendre à l'accueil." },
+      { senderId: alice.id,   recipientId: bob.id,     itemId: createdItems[0].id, content: 'Super merci beaucoup ! Je serai là vers 9h.' },
+      { senderId: bob.id,     recipientId: alice.id,   itemId: createdItems[0].id, content: 'Parfait, à demain 👍' },
+      { senderId: alice.id,   recipientId: charlie.id, itemId: createdItems[2].id, content: 'Salut, tu cherches une veste North Face noire ?' },
+      { senderId: charlie.id, recipientId: alice.id,   itemId: createdItems[2].id, content: "Oui ! Tu l'as trouvée ?" },
+      { senderId: alice.id,   recipientId: charlie.id, itemId: createdItems[2].id, content: "Je crois avoir vu quelqu'un la déposer en secrétariat." },
+      { senderId: charlie.id, recipientId: alice.id,   itemId: createdItems[2].id, content: 'Je vais vérifier, merci du tuyau !' },
+    ],
   });
 
   // ── Réclamation démo
-  console.log('🌱  Seeding demo claim…');
-  await prisma.claim.create({
+  console.log('🌱  Seeding demo claim request…');
+  await prisma.claimRequest.create({
     data: {
-      itemId:      createdItems[1].id,
-      claimantId:  charlie.id,
-      description: 'Ce sont mes clés ! Il y a un porte-clés rouge avec la lettre C.',
-      status:      'PENDING',
+      itemId:         createdItems[1].id,
+      requesterId:    charlie.id,
+      requestMessage: 'Ce sont mes clés ! Il y a un porte-clés rouge avec la lettre C.',
+      status:         'PENDING',
     },
   });
 
@@ -184,21 +162,21 @@ async function main() {
   console.log('🌱  Seeding demo notifications…');
   await prisma.notification.createMany({
     data: [
-      { userId: alice.id,   type: 'NEW_MESSAGE',  message: 'Bob vous a envoyé un message concernant votre annonce.' },
-      { userId: charlie.id, type: 'CLAIM_UPDATE',  message: 'Votre réclamation pour le trousseau de clés est en attente de validation.' },
-      { userId: bob.id,     type: 'ITEM_CLAIMED',  message: "Quelqu'un a réclamé votre annonce \"Trousseau de clés trouvé\"." },
-      { userId: alice.id,   type: 'NEW_MESSAGE',  message: 'Charlie vous a envoyé un message concernant la veste North Face.' },
+      { userId: alice.id,   type: 'NEW_MESSAGE',    message: 'Bob vous a envoyé un message concernant vos AirPods.', itemId: createdItems[0].id },
+      { userId: bob.id,     type: 'NEW_MESSAGE',    message: 'Alice vous a répondu concernant les AirPods.',        itemId: createdItems[0].id },
+      { userId: bob.id,     type: 'CLAIM_APPROVED', message: 'Une réclamation a été soumise pour votre annonce.',   itemId: createdItems[1].id },
+      { userId: charlie.id, type: 'NEW_MESSAGE',    message: 'Alice vous a envoyé un message concernant la veste.', itemId: createdItems[2].id },
+      { userId: alice.id,   type: 'ITEM_VERIFIED',  message: 'Votre annonce "AirPods Pro perdus" a été validée.',   itemId: createdItems[0].id },
     ],
-    skipDuplicates: true,
   });
 
   console.log('\n✅  Seed complet !');
-  console.log('────────────────────────────────────────');
-  console.log('👤  Admin   : admin@isep.fr          / Admin1234!');
-  console.log('👤  Alice   : alice@eleve.isep.fr    / Demo1234!');
-  console.log('👤  Bob     : bob@eleve.isep.fr      / Demo1234!');
-  console.log('👤  Charlie : charlie@eleve.isep.fr  / Demo1234!');
-  console.log('────────────────────────────────────────');
+  console.log('──────────────────────────────────────────');
+  console.log('👤  Admin   : admin@isep.fr           / Admin1234!');
+  console.log('👤  Alice   : alice@eleve.isep.fr     / Demo1234!');
+  console.log('👤  Bob     : bob@eleve.isep.fr       / Demo1234!');
+  console.log('👤  Charlie : charlie@eleve.isep.fr   / Demo1234!');
+  console.log('──────────────────────────────────────────');
 }
 
 main()
